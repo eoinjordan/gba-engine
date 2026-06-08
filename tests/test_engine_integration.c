@@ -72,7 +72,12 @@ TEST(active_actors_move_and_destroyed_slots_are_reused) {
   engine_update();
   load_scene(0);
 
-  actor_t *first = spawn_actor(7, 10, 12);
+  // Spawned well clear of scene0's single collision tile (tile (2,2), i.e.
+  // pixels [16,24)x[16,24)) — at (10,12) with the actor's 8x8 bounds, it
+  // would already overlap that wall and collision_resolve_movement would
+  // (correctly) refuse to move it at all, which isn't what this test is
+  // about. (4,4) -> (6,7) stays clear of the wall on both legs.
+  actor_t *first = spawn_actor(7, 4, 4);
   ASSERT_NOT_NULL(first);
   first->vel_x = 2;
   first->vel_y = 3;
@@ -80,8 +85,8 @@ TEST(active_actors_move_and_destroyed_slots_are_reused) {
 
   engine_update();
 
-  ASSERT_EQ(first->x, 12);
-  ASSERT_EQ(first->y, 15);
+  ASSERT_EQ(first->x, 6);
+  ASSERT_EQ(first->y, 7);
   ASSERT_EQ(first->anim_frame, 1);
 
   actor_t *second = spawn_actor(9, 20, 24);
