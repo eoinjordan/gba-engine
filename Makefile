@@ -67,12 +67,31 @@ clean:
 # feedback without needing devkitARM or a GBA at all.
 # ---------------------------------------------------------------------------
 HOST_CC ?= gcc
-HOST_CFLAGS := -std=c11 -Wall -Wextra -I$(INCDIR) -Itests
+HOST_CFLAGS := -std=c11 -Wall -Wextra -Itests -I$(INCDIR)
 TEST_BIN := $(BINDIR)/test_runner
 TEST_SOURCES := tests/test_vm.c tests/test_stubs.c $(SRCDIR)/vm.c $(SRCDIR)/camera.c $(SRCDIR)/collision.c $(SRCDIR)/text.c $(SRCDIR)/savegame.c
+INTEGRATION_TEST_BIN := $(BINDIR)/test_engine_integration
+INTEGRATION_TEST_SOURCES := tests/test_engine_integration.c \
+	tests/test_engine_stubs.c \
+	$(SRCDIR)/engine.c \
+	$(SRCDIR)/vm.c \
+	$(SRCDIR)/camera.c \
+	$(SRCDIR)/collision.c \
+	$(SRCDIR)/text.c \
+	$(SRCDIR)/savegame.c
 
-test: | $(BINDIR)
+test-unit: | $(BINDIR)
 	$(HOST_CC) $(HOST_CFLAGS) $(TEST_SOURCES) -o $(TEST_BIN)
 	$(TEST_BIN)
 
-.PHONY: test
+test-integration: | $(BINDIR)
+	$(HOST_CC) $(HOST_CFLAGS) $(INTEGRATION_TEST_SOURCES) -o $(INTEGRATION_TEST_BIN)
+	$(INTEGRATION_TEST_BIN)
+
+test-e2e: $(BINDIR)/game.gba
+	bash scripts/test-emu.sh $(BINDIR)/game.gba
+
+test: test-unit
+test-host: test-unit test-integration
+
+.PHONY: test test-unit test-integration test-e2e test-host

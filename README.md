@@ -125,11 +125,28 @@ Two layers of testing back this engine, mirroring the split between
   recording test doubles for the engine-side hooks the VM calls into
   (`vm_scene_load`, `vm_scene_set_tone`), and `test_vm.c` is the suite itself.
 
+- **Integration tests (host-side, fast).** `engine.c` is exercised on the host
+  with fake VRAM/register state and synthetic compiled scene data. This covers
+  scene rendering, palette changes, actor updates, and the VM-to-engine bridge
+  without needing devkitARM or an emulator.
+
+  ```sh
+  make test-integration
+  ```
+
 - **Build verification (devkitARM).** CI also builds an actual `.gba` ROM
   with the real toolchain and checks that `gbafix` produced a well-formed
   header. This is the only way to catch register/ABI/linker issues that host
   unit tests can't see — but it doesn't tell you *what's on screen*, which
   is why the VM logic above is tested independently of rendering.
+
+- **Emulator smoke test (end-to-end).** CI boots the built ROM under mGBA with
+  dummy SDL drivers and requires it to stay alive for a short window without
+  crashing immediately.
+
+  ```sh
+  make test-e2e
+  ```
 
 Both run automatically in CI on every push and PR (see
 `.github/workflows/ci.yml`).

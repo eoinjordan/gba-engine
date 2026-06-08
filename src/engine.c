@@ -54,8 +54,13 @@ static const gba_game_data_t fallback_game_data = {
 // ---------------------------------------------------------------------------
 
 // VRAM layout (Mode 0)
-#define CHARBLOCK(n) ((volatile uint16_t *)(0x06000000 + (n) * 0x4000))
-#define SCREENBLOCK(n) ((volatile uint16_t *)(0x06000000 + (n) * 0x0800))
+#ifndef GBA_VRAM_ADDR
+#define GBA_VRAM_ADDR(offset)                                                 \
+  ((volatile uint16_t *)(0x06000000u + (offset)))
+#endif
+
+#define CHARBLOCK(n) GBA_VRAM_ADDR((n) * 0x4000u)
+#define SCREENBLOCK(n) GBA_VRAM_ADDR((n) * 0x0800u)
 
 #define TILE_CHARBLOCK 0
 #define MAP_SCREENBLOCK 28

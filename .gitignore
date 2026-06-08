@@ -2,6 +2,7 @@ obj/
 bin/*.gba
 bin/*.elf
 bin/*.map
+bin/test_*
 *.o
 .DS_Store
 
