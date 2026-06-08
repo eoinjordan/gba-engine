@@ -264,14 +264,19 @@ void engine_update(void) {
     // walls rather than clipping through them.
     if (i > 0) {
       switch (actor->movement_type) {
-      case MOVEMENT_TYPE_PATROL:
+      case MOVEMENT_TYPE_PATROL: {
+        // movement_positive is a single-bit field — its address can't be
+        // taken directly, so round-trip through a plain bool local.
+        bool moving_positive = actor->movement_positive;
         movement_patrol((int16_t)actor->x, (int16_t)actor->y,
                         (int16_t)actor->movement_bounds_x,
                         (int16_t)actor->movement_bounds_y,
                         actor->movement_bounds_w, actor->movement_bounds_h,
-                        (int16_t)actor->move_speed, &actor->movement_positive,
+                        (int16_t)actor->move_speed, &moving_positive,
                         &actor->vel_x, &actor->vel_y);
+        actor->movement_positive = moving_positive;
         break;
+      }
       case MOVEMENT_TYPE_FOLLOW:
         if (current_scene.num_actors > 0 && actors[0].active) {
           movement_follow((int16_t)actor->x, (int16_t)actor->y,
