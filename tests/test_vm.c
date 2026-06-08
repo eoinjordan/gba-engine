@@ -12,6 +12,7 @@
 #include "collision.h"
 #include "test_framework.h"
 #include "test_stubs.h"
+#include "text.h"
 #include "vm.h"
 #include <string.h>
 
@@ -625,6 +626,119 @@ TEST(collision_resolve_movement_handles_null_outputs_gracefully) {
 }
 
 // ---------------------------------------------------------------------------
+// Dialogue text helpers (src/text.c)
+// ---------------------------------------------------------------------------
+
+TEST(text_format_variables_substitutes_placeholders_with_decimal_values) {
+  reset_vm();
+  vm_variables[5] = 42;
+  vm_variables[1] = 7;
+
+  char out[64];
+  size_t written =
+      text_format_variables("You have {5} gold and {1} potions", out,
+                            sizeof(out));
+
+  ASSERT_EQ(strcmp(out, "You have 42 gold and 7 potions"), 0);
+  ASSERT_EQ(written, strlen(out));
+}
+
+TEST(text_format_variables_renders_negative_values_with_a_minus_sign) {
+  reset_vm();
+  vm_variables[1] = -7;
+
+  char out[32];
+  text_format_variables("HP: {1}", out, sizeof(out));
+
+  ASSERT_EQ(strcmp(out, "HP: -7"), 0);
+}
+
+TEST(text_format_variables_leaves_malformed_placeholders_untouched) {
+  reset_vm();
+
+  char out[64];
+  static const char *input = "{abc} and {12 and {";
+  text_format_variables(input, out, sizeof(out));
+
+  ASSERT_EQ(strcmp(out, input), 0);
+}
+
+TEST(text_format_variables_treats_out_of_range_indices_as_literal_text) {
+  reset_vm();
+
+  char out[16];
+  text_format_variables("{999}", out, sizeof(out));
+
+  ASSERT_EQ(strcmp(out, "{999}"), 0);
+}
+
+TEST(text_format_variables_truncates_to_fit_the_output_buffer) {
+  reset_vm();
+  vm_variables[0] = 12345;
+
+  char out[6];
+  size_t written = text_format_variables("{0}-tail", out, sizeof(out));
+
+  // Buffer holds 5 chars + NUL; "12345" alone already fills it.
+  ASSERT_EQ(written, 5u);
+  ASSERT_EQ(strlen(out), 5u);
+  ASSERT_EQ(strcmp(out, "12345"), 0);
+}
+
+TEST(text_word_wrap_leaves_short_text_on_a_single_line) {
+  char out[32];
+  text_word_wrap("Hi there", 20, out, sizeof(out));
+
+  ASSERT_EQ(strcmp(out, "Hi there"), 0);
+}
+
+TEST(text_word_wrap_breaks_at_word_boundaries_when_a_line_overflows) {
+  char out[32];
+  text_word_wrap("one two three", 7, out, sizeof(out));
+
+  ASSERT_EQ(strcmp(out, "one two\nthree"), 0);
+}
+
+TEST(text_word_wrap_collapses_whitespace_runs_into_single_spaces) {
+  char out[32];
+  text_word_wrap("a    b\tc", 20, out, sizeof(out));
+
+  ASSERT_EQ(strcmp(out, "a b c"), 0);
+}
+
+TEST(text_word_wrap_preserves_explicit_newlines_alongside_wrap_breaks) {
+  char out[32];
+  // "ab" fits; "cd ef" fits on the second (explicit) line; "gh" doesn't fit
+  // alongside "cd ef" and must wrap onto a third line of its own.
+  text_word_wrap("ab\ncd ef gh", 5, out, sizeof(out));
+
+  ASSERT_EQ(strcmp(out, "ab\ncd ef\ngh"), 0);
+}
+
+TEST(text_word_wrap_hard_breaks_a_single_word_longer_than_the_line) {
+  char out[32];
+  text_word_wrap("abcdefgh", 3, out, sizeof(out));
+
+  ASSERT_EQ(strcmp(out, "abc\ndef\ngh"), 0);
+}
+
+TEST(text_word_wrap_only_applies_hard_breaks_when_wrapping_is_disabled) {
+  char out[32];
+  text_word_wrap("a b\nc", 0, out, sizeof(out));
+
+  ASSERT_EQ(strcmp(out, "a b\nc"), 0);
+}
+
+TEST(text_word_wrap_truncates_to_fit_the_output_buffer) {
+  char out[4];
+  size_t written = text_word_wrap("abcdefgh", 0, out, sizeof(out));
+
+  ASSERT_EQ(written, 3u);
+  ASSERT_EQ(strlen(out), 3u);
+  ASSERT_EQ(strcmp(out, "abc"), 0);
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -673,6 +787,19 @@ int main(void) {
   RUN_TEST(collision_resolve_movement_stops_an_actor_at_a_wall);
   RUN_TEST(collision_resolve_movement_slides_along_a_wall);
   RUN_TEST(collision_resolve_movement_handles_null_outputs_gracefully);
+
+  RUN_TEST(text_format_variables_substitutes_placeholders_with_decimal_values);
+  RUN_TEST(text_format_variables_renders_negative_values_with_a_minus_sign);
+  RUN_TEST(text_format_variables_leaves_malformed_placeholders_untouched);
+  RUN_TEST(text_format_variables_treats_out_of_range_indices_as_literal_text);
+  RUN_TEST(text_format_variables_truncates_to_fit_the_output_buffer);
+  RUN_TEST(text_word_wrap_leaves_short_text_on_a_single_line);
+  RUN_TEST(text_word_wrap_breaks_at_word_boundaries_when_a_line_overflows);
+  RUN_TEST(text_word_wrap_collapses_whitespace_runs_into_single_spaces);
+  RUN_TEST(text_word_wrap_preserves_explicit_newlines_alongside_wrap_breaks);
+  RUN_TEST(text_word_wrap_hard_breaks_a_single_word_longer_than_the_line);
+  RUN_TEST(text_word_wrap_only_applies_hard_breaks_when_wrapping_is_disabled);
+  RUN_TEST(text_word_wrap_truncates_to_fit_the_output_buffer);
 
   RUN_TEST(multiple_scripts_run_concurrently_without_interfering);
   RUN_TEST(terminate_removes_a_specific_context_without_affecting_others);
