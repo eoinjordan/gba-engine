@@ -10,6 +10,7 @@
 
 #include "camera.h"
 #include "collision.h"
+#include "savegame.h"
 #include "test_framework.h"
 #include "test_stubs.h"
 #include "text.h"
@@ -739,6 +740,117 @@ TEST(text_word_wrap_truncates_to_fit_the_output_buffer) {
 }
 
 // ---------------------------------------------------------------------------
+// Save data encode/decode (src/savegame.c)
+// ---------------------------------------------------------------------------
+
+static save_state_t make_sample_save_state(void) {
+  save_state_t state;
+  state.scene_index = 3;
+  state.player_x = 120;
+  state.player_y = 88;
+  for (size_t i = 0; i < VM_VARIABLE_COUNT; i++) {
+    // A mix of positive, negative, and zero values across the range.
+    state.variables[i] = (int16_t)((int)i * 7 - 500);
+  }
+  return state;
+}
+
+TEST(save_encode_reports_the_full_record_size_on_success) {
+  save_state_t state = make_sample_save_state();
+  static uint8_t buffer[SAVE_RECORD_SIZE];
+
+  ASSERT_EQ(save_encode(&state, buffer, sizeof(buffer)), SAVE_RECORD_SIZE);
+}
+
+TEST(save_encode_refuses_a_buffer_smaller_than_the_record) {
+  save_state_t state = make_sample_save_state();
+  static uint8_t buffer[SAVE_RECORD_SIZE];
+
+  ASSERT_EQ(save_encode(&state, buffer, SAVE_RECORD_SIZE - 1), 0u);
+}
+
+TEST(save_round_trip_preserves_every_field) {
+  save_state_t original = make_sample_save_state();
+  static uint8_t buffer[SAVE_RECORD_SIZE];
+  ASSERT_EQ(save_encode(&original, buffer, sizeof(buffer)), SAVE_RECORD_SIZE);
+
+  save_state_t restored;
+  memset(&restored, 0, sizeof(restored));
+  ASSERT_TRUE(save_decode(buffer, sizeof(buffer), &restored));
+
+  ASSERT_EQ(restored.scene_index, original.scene_index);
+  ASSERT_EQ(restored.player_x, original.player_x);
+  ASSERT_EQ(restored.player_y, original.player_y);
+  for (size_t i = 0; i < VM_VARIABLE_COUNT; i++) {
+    ASSERT_EQ(restored.variables[i], original.variables[i]);
+  }
+}
+
+TEST(save_decode_rejects_a_buffer_smaller_than_the_record) {
+  save_state_t original = make_sample_save_state();
+  static uint8_t buffer[SAVE_RECORD_SIZE];
+  save_encode(&original, buffer, sizeof(buffer));
+
+  save_state_t restored;
+  ASSERT_FALSE(save_decode(buffer, SAVE_RECORD_SIZE - 1, &restored));
+}
+
+TEST(save_decode_rejects_data_with_a_bad_magic_number) {
+  save_state_t original = make_sample_save_state();
+  static uint8_t buffer[SAVE_RECORD_SIZE];
+  save_encode(&original, buffer, sizeof(buffer));
+
+  // Corrupt the first magic byte — simulates uninitialised/foreign SRAM.
+  buffer[0] ^= 0xFF;
+
+  save_state_t restored;
+  ASSERT_FALSE(save_decode(buffer, sizeof(buffer), &restored));
+}
+
+TEST(save_decode_rejects_data_from_an_incompatible_format_version) {
+  save_state_t original = make_sample_save_state();
+  static uint8_t buffer[SAVE_RECORD_SIZE];
+  save_encode(&original, buffer, sizeof(buffer));
+
+  buffer[4] += 1; // version byte
+
+  save_state_t restored;
+  ASSERT_FALSE(save_decode(buffer, sizeof(buffer), &restored));
+}
+
+TEST(save_decode_rejects_data_with_a_corrupted_checksum) {
+  save_state_t original = make_sample_save_state();
+  static uint8_t buffer[SAVE_RECORD_SIZE];
+  save_encode(&original, buffer, sizeof(buffer));
+
+  // Flip a byte well inside the variable payload — magic/version still
+  // check out, but the checksum no longer matches.
+  buffer[SAVE_RECORD_SIZE / 2] ^= 0xFF;
+
+  save_state_t restored;
+  ASSERT_FALSE(save_decode(buffer, sizeof(buffer), &restored));
+}
+
+TEST(save_decode_leaves_the_output_untouched_on_failure) {
+  static uint8_t blank[SAVE_RECORD_SIZE] = {0}; // never a valid record
+
+  save_state_t restored;
+  memset(&restored, 0xAB, sizeof(restored));
+  ASSERT_FALSE(save_decode(blank, sizeof(blank), &restored));
+
+  // Sentinel bytes should be exactly as we left them.
+  uint8_t *raw = (uint8_t *)&restored;
+  bool untouched = true;
+  for (size_t i = 0; i < sizeof(restored); i++) {
+    if (raw[i] != 0xAB) {
+      untouched = false;
+      break;
+    }
+  }
+  ASSERT_TRUE(untouched);
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -800,6 +912,15 @@ int main(void) {
   RUN_TEST(text_word_wrap_hard_breaks_a_single_word_longer_than_the_line);
   RUN_TEST(text_word_wrap_only_applies_hard_breaks_when_wrapping_is_disabled);
   RUN_TEST(text_word_wrap_truncates_to_fit_the_output_buffer);
+
+  RUN_TEST(save_encode_reports_the_full_record_size_on_success);
+  RUN_TEST(save_encode_refuses_a_buffer_smaller_than_the_record);
+  RUN_TEST(save_round_trip_preserves_every_field);
+  RUN_TEST(save_decode_rejects_a_buffer_smaller_than_the_record);
+  RUN_TEST(save_decode_rejects_data_with_a_bad_magic_number);
+  RUN_TEST(save_decode_rejects_data_from_an_incompatible_format_version);
+  RUN_TEST(save_decode_rejects_data_with_a_corrupted_checksum);
+  RUN_TEST(save_decode_leaves_the_output_untouched_on_failure);
 
   RUN_TEST(multiple_scripts_run_concurrently_without_interfering);
   RUN_TEST(terminate_removes_a_specific_context_without_affecting_others);

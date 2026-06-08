@@ -69,7 +69,7 @@ clean:
 HOST_CC ?= gcc
 HOST_CFLAGS := -std=c11 -Wall -Wextra -I$(INCDIR) -Itests
 TEST_BIN := $(BINDIR)/test_runner
-TEST_SOURCES := tests/test_vm.c tests/test_stubs.c $(SRCDIR)/vm.c $(SRCDIR)/camera.c $(SRCDIR)/collision.c $(SRCDIR)/text.c
+TEST_SOURCES := tests/test_vm.c tests/test_stubs.c $(SRCDIR)/vm.c $(SRCDIR)/camera.c $(SRCDIR)/collision.c $(SRCDIR)/text.c $(SRCDIR)/savegame.c
 
 test: | $(BINDIR)
 	$(HOST_CC) $(HOST_CFLAGS) $(TEST_SOURCES) -o $(TEST_BIN)
