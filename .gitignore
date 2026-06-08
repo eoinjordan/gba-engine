@@ -4,3 +4,7 @@ bin/*.elf
 bin/*.map
 *.o
 .DS_Store
+
+# Local planning notes — not part of the published project
+issues.md
+ISSUES.md
