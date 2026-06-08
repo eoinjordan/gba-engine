@@ -64,6 +64,12 @@ TEST(engine_update_cycles_scenes_when_start_is_pressed) {
 
 TEST(active_actors_move_and_destroyed_slots_are_reused) {
   reset_engine();
+  // Drain the bootstrap script (LOAD_SCENE 0) that engine_init scheduled but
+  // never ran — otherwise it fires on our first engine_update() below
+  // (alongside the actor movement we're testing) and reloads scene 0,
+  // wiping the actor we're about to spawn. (See
+  // engine_update_cycles_scenes_when_start_is_pressed for the same drain.)
+  engine_update();
   load_scene(0);
 
   actor_t *first = spawn_actor(7, 10, 12);
@@ -89,6 +95,12 @@ TEST(active_actors_move_and_destroyed_slots_are_reused) {
 
 TEST(movement_type_patrol_paces_back_and_forth_across_its_bounds) {
   reset_engine();
+  // Drain the bootstrap script (LOAD_SCENE 0) that engine_init scheduled but
+  // never ran — otherwise it fires on our first engine_update() below
+  // (alongside the patrol movement we're testing) and reloads scene 0,
+  // wiping both actors we're about to spawn. (See
+  // engine_update_cycles_scenes_when_start_is_pressed for the same drain.)
+  engine_update();
   load_scene(0);
 
   // actors[0] is the camera/player target; keep it stationary and well away
@@ -124,6 +136,12 @@ TEST(movement_type_patrol_paces_back_and_forth_across_its_bounds) {
 
 TEST(movement_type_follow_chases_the_player_only_within_range) {
   reset_engine();
+  // Drain the bootstrap script (LOAD_SCENE 0) that engine_init scheduled but
+  // never ran — otherwise it fires on our first engine_update() below
+  // (alongside the follow movement we're testing) and reloads scene 0,
+  // wiping both actors we're about to spawn. (See
+  // engine_update_cycles_scenes_when_start_is_pressed for the same drain.)
+  engine_update();
   load_scene(0);
 
   actor_t *player = spawn_actor(0, 30, 8);
@@ -153,6 +171,13 @@ TEST(movement_type_follow_chases_the_player_only_within_range) {
 
 TEST(scene_trigger_runs_its_script_once_when_the_player_enters) {
   reset_engine();
+  // Drain the bootstrap script (LOAD_SCENE 0) that engine_init scheduled but
+  // never ran — otherwise it fires on our first engine_update() below
+  // (alongside the trigger overlap we're testing), reloading *scene 0*
+  // (not the scene 2 we're about to explicitly load) and wiping our player
+  // actor and current_scene_def/current_palette_tone out from under us. (See
+  // engine_update_cycles_scenes_when_start_is_pressed for the same drain.)
+  engine_update();
   load_scene(2);
 
   // test_scene2's only trigger covers tile (2,2)-(4,4), i.e. pixels
