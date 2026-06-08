@@ -3,6 +3,8 @@
 #include "engine.h"
 #include "gba_scene.h"
 #include "gba_system.h"
+#include "movement.h"
+#include "trigger.h"
 #include "vm.h"
 #include <stddef.h>
 
@@ -32,6 +34,7 @@ static const gba_scene_def_t fallback_scene = {
     0,
     fallback_collisions,
     fallback_scene_script,
+    NULL,
 };
 static const gba_scene_def_t *const fallback_scenes[] = {&fallback_scene};
 static const gba_game_data_t fallback_game_data = {
@@ -90,6 +93,12 @@ static bool engine_running = true;
 // edge. Scenes no larger than one screen simply never scroll (camera stays
 // at the origin — see camera_follow's "world fits in viewport" case).
 static camera_t camera;
+
+// Index into current_scene_def->triggers that the player actor (actors[0])
+// is currently standing inside, or TRIGGER_NONE. Persisted across frames so
+// a trigger's script fires once on entry rather than every frame the player
+// stands in the zone — re-entering after leaving fires it again.
+static int current_trigger_index;
 
 // 16-colour background palette (bank 0). Mirrors the gba-blank template look:
 // dark border + light fill, on the classic GB green ramp.
@@ -156,7 +165,13 @@ static void set_map_entry(uint16_t x, uint16_t y, uint16_t tile_index) {
 
 static void render_scene(void) {
   const gba_scene_def_t *scene = current_scene_def;
-  uint8_t tone = scene != NULL ? scene->palette_tone : current_palette_tone;
+  // current_palette_tone is the single source of truth for which palette
+  // bank is active: load_scene seeds it from the scene's compiled default
+  // (scene->palette_tone) when entering a scene, and vm_scene_set_tone
+  // overrides it at runtime (e.g. a script darkening a room) — render_scene
+  // must respect that override rather than reverting to the compiled
+  // default on every redraw.
+  uint8_t tone = current_palette_tone;
   load_palette(bg_palettes[tone & 0x03], 0, 8);
 
   load_solid_tile(TILE_BACKDROP, 0);
@@ -210,6 +225,7 @@ static void init_scene_state(void) {
   current_palette_tone = 0;
   camera.x = 0;
   camera.y = 0;
+  current_trigger_index = TRIGGER_NONE;
 
   for (uint8_t i = 0; i < MAX_ACTORS; i++) {
     actors[i].active = false;
@@ -240,6 +256,44 @@ void engine_update(void) {
       continue;
     }
 
+    // GB-Studio-style movement patterns: actors[0] is the player (driven by
+    // input/scripts, never by a pattern); other actors may be assigned a
+    // pattern the engine drives every frame without a script running. These
+    // only compute vel_x/vel_y — collision resolution below (shared with
+    // player movement) still applies, so patrol/follow actors slide along
+    // walls rather than clipping through them.
+    if (i > 0) {
+      switch (actor->movement_type) {
+      case MOVEMENT_TYPE_PATROL: {
+        // movement_positive is a single-bit field — its address can't be
+        // taken directly, so round-trip through a plain bool local.
+        bool moving_positive = actor->movement_positive;
+        movement_patrol((int16_t)actor->x, (int16_t)actor->y,
+                        (int16_t)actor->movement_bounds_x,
+                        (int16_t)actor->movement_bounds_y,
+                        actor->movement_bounds_w, actor->movement_bounds_h,
+                        (int16_t)actor->move_speed, &moving_positive,
+                        &actor->vel_x, &actor->vel_y);
+        actor->movement_positive = moving_positive;
+        break;
+      }
+      case MOVEMENT_TYPE_FOLLOW:
+        if (current_scene.num_actors > 0 && actors[0].active) {
+          movement_follow((int16_t)actor->x, (int16_t)actor->y,
+                          (int16_t)actors[0].x, (int16_t)actors[0].y,
+                          (int16_t)actor->move_speed,
+                          actor->movement_bounds_w, &actor->vel_x,
+                          &actor->vel_y);
+        } else {
+          actor->vel_x = 0;
+          actor->vel_y = 0;
+        }
+        break;
+      default:
+        break;
+      }
+    }
+
     if (actor->collision_enabled && current_scene_def != NULL &&
         (actor->vel_x != 0 || actor->vel_y != 0)) {
       // Collision-aware movement: slide along walls (resolve X, then Y)
@@ -265,6 +319,39 @@ void engine_update(void) {
         actor->anim_frame++;
       }
     }
+  }
+
+  // Scene triggers (GB Studio "trigger" convention): zones the player actor
+  // (actors[0]) runs a script for once on entry. Compiled trigger bounds are
+  // tile-coordinate (mirroring `collisions`), converted to pixel space here
+  // to compare against the player's pixel position/size, matching how
+  // collision resolution already operates in pixels.
+  if (current_scene_def != NULL && current_scene_def->triggers != NULL &&
+      current_scene.num_actors > 0 && actors[0].active) {
+    const actor_t *player = &actors[0];
+    int found = TRIGGER_NONE;
+
+    for (uint8_t t = 0; t < current_scene_def->trigger_count; t++) {
+      const gba_trigger_def_t *trigger = &current_scene_def->triggers[t];
+      if (trigger_rects_overlap(
+              (int16_t)player->x, (int16_t)player->y, player->bounds_w,
+              player->bounds_h, (int16_t)((uint16_t)trigger->x * TILE_WIDTH),
+              (int16_t)((uint16_t)trigger->y * TILE_HEIGHT),
+              (uint16_t)trigger->w * TILE_WIDTH,
+              (uint16_t)trigger->h * TILE_HEIGHT)) {
+        found = (int)t;
+        break;
+      }
+    }
+
+    if (found != current_trigger_index && found != TRIGGER_NONE) {
+      const gba_trigger_def_t *trigger = &current_scene_def->triggers[found];
+      if (trigger->script != NULL) {
+        script_execute(0, (UBYTE *)trigger->script, NULL, 0);
+      }
+    }
+
+    current_trigger_index = found;
   }
 
   if (current_scene.num_actors > 0 && actors[0].active) {
@@ -308,7 +395,14 @@ void load_scene(uint8_t scene_index) {
   current_scene.type = current_scene_def->type;
   current_scene.background_index = scene_index;
   current_scene.palette_index = current_scene_def->palette_tone;
+  // Seed the runtime tone from the scene's compiled default — see
+  // render_scene's comment on why current_palette_tone is the source of
+  // truth it reads from (this is what makes a freshly-loaded scene render
+  // with its own configured tone rather than whatever a previous scene's
+  // script last set).
+  current_palette_tone = current_scene_def->palette_tone;
   current_scene.num_actors = 0;
+  current_trigger_index = TRIGGER_NONE;
 
   for (uint8_t i = 0; i < MAX_ACTORS; i++) {
     actors[i].active = false;
@@ -355,11 +449,17 @@ actor_t *spawn_actor(uint8_t sprite_index, uint16_t x, uint16_t y) {
     actor->anim_speed = 0;
     actor->anim_tick = 0;
     actor->collision_group = COLLISION_GROUP_NONE;
-    actor->movement_type = 0;
+    actor->movement_type = MOVEMENT_TYPE_STATIC;
+    actor->move_speed = 0;
+    actor->movement_positive = true;
     actor->bounds_x = x;
     actor->bounds_y = y;
     actor->bounds_w = TILE_WIDTH;
     actor->bounds_h = TILE_HEIGHT;
+    actor->movement_bounds_x = 0;
+    actor->movement_bounds_y = 0;
+    actor->movement_bounds_w = 0;
+    actor->movement_bounds_h = 0;
 
     if (i >= current_scene.num_actors) {
       current_scene.num_actors = i + 1;
