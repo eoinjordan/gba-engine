@@ -33,6 +33,14 @@
 #define COLLISION_GROUP_FLAG_PLATFORM COLLISION_GROUP_FLAG_3
 #define COLLISION_GROUP_FLAG_SOLID COLLISION_GROUP_FLAG_4
 
+// Movement types (GB Studio's per-actor movement-pattern system): a compiled
+// scene assigns each non-player actor one of these so the engine can drive
+// its velocity without a script running every frame. See movement.{c,h} for
+// the pure, host-testable logic that computes velocity from these.
+#define MOVEMENT_TYPE_STATIC 0  // Never moves under its own power.
+#define MOVEMENT_TYPE_PATROL 1  // Paces back and forth across `bounds`.
+#define MOVEMENT_TYPE_FOLLOW 2  // Walks toward a target while within range.
+
 typedef enum {
     LCD_simple,
     LCD_parallax,
@@ -55,6 +63,11 @@ typedef struct actor_t
     bool collision_enabled    : 1;
     bool movement_interrupt   : 1;
     bool persistent           : 1;
+    // Runtime-only patrol state for MOVEMENT_TYPE_PATROL: true while the
+    // actor is moving toward the "positive" end of its bounds (right when
+    // patrolling horizontally, down when patrolling vertically). Not part of
+    // any compiled data format — purely engine bookkeeping between frames.
+    bool movement_positive    : 1;
     uint8_t sprite_index;
     uint8_t palette_index;
     uint16_t x;

@@ -50,6 +50,16 @@ engine.json  Field/metadata definitions consumed by GBA Studio's compiler
   scene bounds, locks axes that fit within the viewport).
 - **`collision.{c,h}`** — Pure tile-map collision math: rectangle-vs-tilemap
   overlap testing and per-axis "slide along walls" movement resolution.
+- **`movement.{c,h}`** — Pure per-actor movement-pattern math (GB Studio's
+  "movement types"): patrol (pace back and forth across a bounds rectangle,
+  reversing at each edge) and follow (walk toward a target on each axis
+  independently while within range, without overshooting). Logic is done
+  and tested; not yet wired into `engine_update` pending new compiled-data
+  fields (move speed, patrol/follow bounds) — see Status below.
+- **`trigger.{c,h}`** — Pure scene-trigger geometry: axis-aligned overlap
+  testing between an actor and rectangular trigger zones, plus a
+  deterministic first-match scan over a scene's zones. Logic is done and
+  tested; not yet wired in pending a finalised compiled trigger-zone format.
 - **`text.{c,h}`** — Pure dialogue-text helpers: `{N}`-placeholder variable
   substitution and greedy word-wrap to a fixed character width.
 - **`savegame.{c,h}`** — Pure save-data encode/decode: a fixed-size,
@@ -76,15 +86,20 @@ underneath several of them already exists and is unit-tested (see below):
       variable substitution and word-wrap logic done (`text.{c,h}`)
 - [x] Actor scripting fundamentals (variables, math, conditionals, control
       flow VM opcodes) — movement/interaction opcodes still to come
-- [ ] Scene triggers and events
+- [ ] Scene triggers and events — overlap-detection logic done
+      (`trigger.{c,h}`); needs a compiled trigger-zone data format and
+      VM/engine wiring to actually run a zone's script on entry
 - [ ] Real background tile graphics from compiled art (vs. solid/checker test tiles) —
       camera/scroll done (`camera.{c,h}`)
 - [ ] Sprite rendering via OAM
 - [ ] Audio (GBA APU / DirectSound)
 - [ ] Save/load *hardware* (SRAM HAL, opcodes, menu UI) — record format
       done (`savegame.{c,h}`)
-- [x] Collision-aware actor movement (`collision.{c,h}`) — movement
-      *types* (static/platform/follow) and triggers still to come
+- [x] Collision-aware actor movement (`collision.{c,h}`)
+- [ ] Movement *types* (static/patrol/follow) — velocity logic done
+      (`movement.{c,h}`); needs new per-actor compiled-data fields (move
+      speed, patrol/follow bounds distinct from the collision hitbox) before
+      it can drive `engine_update`
 
 ## Building
 
@@ -106,15 +121,17 @@ Two layers of testing back this engine, mirroring the split between
   deliberately split into a "portable, hardware-free logic" half and a
   "talks-to-real-hardware" half — the VM/script-runner (`src/vm.c`), camera
   follow/clamp math (`src/camera.c`), tile collision math (`src/collision.c`),
-  dialogue text helpers (`src/text.c`), and save-data encode/decode
-  (`src/savegame.c`) are all plain, portable C with no hardware dependencies,
-  so they're compiled and run directly with the host compiler — no devkitARM
-  or emulator needed. The suite covers VM context allocation/recycling,
-  opcode dispatch (including variables, math, and control-flow opcodes),
-  `WAIT`/exception handling, concurrent scripts, camera centring/clamping,
-  tile-map collision detection and wall-sliding movement resolution,
-  placeholder substitution and word-wrap, and save-record round-tripping
-  plus every corruption-rejection path.
+  per-actor movement-pattern math (`src/movement.c`), scene-trigger overlap
+  geometry (`src/trigger.c`), dialogue text helpers (`src/text.c`), and
+  save-data encode/decode (`src/savegame.c`) are all plain, portable C with
+  no hardware dependencies, so they're compiled and run directly with the
+  host compiler — no devkitARM or emulator needed. The suite covers VM
+  context allocation/recycling, opcode dispatch (including variables, math,
+  and control-flow opcodes), `WAIT`/exception handling, concurrent scripts,
+  camera centring/clamping, tile-map collision detection and wall-sliding
+  movement resolution, patrol/follow velocity computation, trigger-zone
+  overlap and first-match scanning, placeholder substitution and word-wrap,
+  and save-record round-tripping plus every corruption-rejection path.
 
   ```sh
   make test
@@ -154,8 +171,9 @@ Both run automatically in CI on every push and PR (see
 ### This suite travels with GBA Studio via the submodule
 
 `tests/` only depends on a handful of portable headers/sources
-(`vm.{c,h}`, `camera.{c,h}`, `collision.{c,h}`, `text.{c,h}`,
-`savegame.{c,h}`) plus the host compiler — and now that GBA Studio mounts
+(`vm.{c,h}`, `camera.{c,h}`, `collision.{c,h}`, `movement.{c,h}`,
+`trigger.{c,h}`, `text.{c,h}`, `savegame.{c,h}`) plus the host compiler —
+and now that GBA Studio mounts
 this repo at `appData/engine/gbavm` as a git submodule, the suite simply
 *comes along for the ride*. No copying or syncing required: whatever
 commit GBA Studio's submodule pointer is pinned to, that's the exact test

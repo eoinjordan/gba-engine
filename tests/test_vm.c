@@ -10,10 +10,12 @@
 
 #include "camera.h"
 #include "collision.h"
+#include "movement.h"
 #include "savegame.h"
 #include "test_framework.h"
 #include "test_stubs.h"
 #include "text.h"
+#include "trigger.h"
 #include "vm.h"
 #include <string.h>
 
@@ -851,6 +853,179 @@ TEST(save_decode_leaves_the_output_untouched_on_failure) {
 }
 
 // ---------------------------------------------------------------------------
+// Movement types (movement.c)
+// ---------------------------------------------------------------------------
+
+TEST(movement_patrol_paces_horizontally_across_a_wide_bounds) {
+  bool moving_positive = true;
+  int16_t vel_x = 0;
+  int16_t vel_y = 0;
+
+  // Bounds wider than tall (16x8) -> horizontal patrol. Actor mid-way,
+  // already heading toward the max edge.
+  movement_patrol(20, 10, 16, 10, 16, 8, 1, &moving_positive, &vel_x, &vel_y);
+
+  ASSERT_EQ(vel_x, 1);
+  ASSERT_EQ(vel_y, 0);
+  ASSERT_TRUE(moving_positive);
+}
+
+TEST(movement_patrol_reverses_at_the_positive_edge) {
+  bool moving_positive = true;
+  int16_t vel_x = 0;
+  int16_t vel_y = 0;
+
+  // Actor has reached (or passed) the right edge of a 16px-wide bounds
+  // starting at x=16 -> max edge is x=32.
+  movement_patrol(32, 10, 16, 10, 16, 8, 2, &moving_positive, &vel_x, &vel_y);
+
+  ASSERT_EQ(vel_x, -2);
+  ASSERT_EQ(vel_y, 0);
+  ASSERT_FALSE(moving_positive);
+}
+
+TEST(movement_patrol_reverses_at_the_negative_edge) {
+  bool moving_positive = false;
+  int16_t vel_x = 0;
+  int16_t vel_y = 0;
+
+  // Actor has reached (or passed) the left edge of the bounds (x=16).
+  movement_patrol(14, 10, 16, 10, 16, 8, 2, &moving_positive, &vel_x, &vel_y);
+
+  ASSERT_EQ(vel_x, 2);
+  ASSERT_EQ(vel_y, 0);
+  ASSERT_TRUE(moving_positive);
+}
+
+TEST(movement_patrol_paces_vertically_across_a_tall_bounds) {
+  bool moving_positive = false;
+  int16_t vel_x = 0;
+  int16_t vel_y = 0;
+
+  // Bounds taller than wide (8x16) -> vertical patrol. Actor mid-way,
+  // currently heading toward the min (top) edge.
+  movement_patrol(10, 20, 10, 16, 8, 16, 1, &moving_positive, &vel_x, &vel_y);
+
+  ASSERT_EQ(vel_x, 0);
+  ASSERT_EQ(vel_y, -1);
+  ASSERT_FALSE(moving_positive);
+}
+
+TEST(movement_patrol_stays_still_with_a_degenerate_bounds) {
+  bool moving_positive = true;
+  int16_t vel_x = 7;
+  int16_t vel_y = 7;
+
+  movement_patrol(10, 10, 10, 10, 0, 0, 3, &moving_positive, &vel_x, &vel_y);
+
+  ASSERT_EQ(vel_x, 0);
+  ASSERT_EQ(vel_y, 0);
+}
+
+TEST(movement_follow_closes_in_on_a_target_within_range) {
+  int16_t vel_x = 0;
+  int16_t vel_y = 0;
+
+  // Target is 10px right and 3px down; speed 2 clamps each axis.
+  movement_follow(0, 0, 10, 3, 2, 32, &vel_x, &vel_y);
+
+  ASSERT_EQ(vel_x, 2);
+  ASSERT_EQ(vel_y, 2);
+}
+
+TEST(movement_follow_does_not_overshoot_on_the_final_approach) {
+  int16_t vel_x = 0;
+  int16_t vel_y = 0;
+
+  // Only 1px of horizontal distance remains; speed 2 should not overshoot.
+  movement_follow(9, 5, 10, 5, 2, 32, &vel_x, &vel_y);
+
+  ASSERT_EQ(vel_x, 1);
+  ASSERT_EQ(vel_y, 0);
+}
+
+TEST(movement_follow_stays_put_when_the_target_is_out_of_range) {
+  int16_t vel_x = 9;
+  int16_t vel_y = 9;
+
+  // Target is 40px away on the X axis; range is only 32px.
+  movement_follow(0, 0, 40, 0, 2, 32, &vel_x, &vel_y);
+
+  ASSERT_EQ(vel_x, 0);
+  ASSERT_EQ(vel_y, 0);
+}
+
+TEST(movement_follow_moves_toward_a_target_that_is_behind_the_actor) {
+  int16_t vel_x = 0;
+  int16_t vel_y = 0;
+
+  movement_follow(20, 20, 10, 25, 3, 32, &vel_x, &vel_y);
+
+  ASSERT_EQ(vel_x, -3);
+  ASSERT_EQ(vel_y, 3);
+}
+
+// ---------------------------------------------------------------------------
+// Scene triggers (trigger.c)
+// ---------------------------------------------------------------------------
+
+TEST(trigger_rects_overlap_detects_intersecting_boxes) {
+  ASSERT_TRUE(trigger_rects_overlap(0, 0, 16, 16, 8, 8, 16, 16));
+}
+
+TEST(trigger_rects_overlap_is_false_for_separated_boxes) {
+  ASSERT_FALSE(trigger_rects_overlap(0, 0, 16, 16, 32, 32, 16, 16));
+}
+
+TEST(trigger_rects_overlap_treats_touching_edges_as_not_overlapping) {
+  // Boxes that merely share an edge (no interior overlap) should not count
+  // — an actor standing just outside a doorway hasn't stepped into it yet.
+  ASSERT_FALSE(trigger_rects_overlap(0, 0, 16, 16, 16, 0, 16, 16));
+}
+
+TEST(trigger_rects_overlap_is_false_for_zero_area_rects) {
+  ASSERT_FALSE(trigger_rects_overlap(0, 0, 0, 16, 0, 0, 16, 16));
+  ASSERT_FALSE(trigger_rects_overlap(0, 0, 16, 16, 0, 0, 0, 16));
+}
+
+TEST(trigger_rects_overlap_handles_negative_coordinates) {
+  ASSERT_TRUE(trigger_rects_overlap(-8, -8, 16, 16, 0, 0, 16, 16));
+  ASSERT_FALSE(trigger_rects_overlap(-32, -32, 16, 16, 0, 0, 16, 16));
+}
+
+TEST(trigger_find_overlap_returns_the_first_matching_zone) {
+  static const int16_t zone_x[] = {0, 100, 100};
+  static const int16_t zone_y[] = {0, 100, 100};
+  static const uint16_t zone_w[] = {16, 16, 16};
+  static const uint16_t zone_h[] = {16, 16, 16};
+
+  // Actor overlaps zones 1 and 2 (both at 100,100) — must report the lower
+  // index so compiled trigger order is honoured deterministically.
+  int found = trigger_find_overlap(104, 104, 8, 8, zone_x, zone_y, zone_w,
+                                   zone_h, 3);
+
+  ASSERT_EQ(found, 1);
+}
+
+TEST(trigger_find_overlap_returns_none_when_nothing_overlaps) {
+  static const int16_t zone_x[] = {100};
+  static const int16_t zone_y[] = {100};
+  static const uint16_t zone_w[] = {16};
+  static const uint16_t zone_h[] = {16};
+
+  int found =
+      trigger_find_overlap(0, 0, 8, 8, zone_x, zone_y, zone_w, zone_h, 1);
+
+  ASSERT_EQ(found, TRIGGER_NONE);
+}
+
+TEST(trigger_find_overlap_handles_a_null_zone_list_safely) {
+  int found = trigger_find_overlap(0, 0, 8, 8, NULL, NULL, NULL, NULL, 5);
+
+  ASSERT_EQ(found, TRIGGER_NONE);
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -921,6 +1096,25 @@ int main(void) {
   RUN_TEST(save_decode_rejects_data_from_an_incompatible_format_version);
   RUN_TEST(save_decode_rejects_data_with_a_corrupted_checksum);
   RUN_TEST(save_decode_leaves_the_output_untouched_on_failure);
+
+  RUN_TEST(movement_patrol_paces_horizontally_across_a_wide_bounds);
+  RUN_TEST(movement_patrol_reverses_at_the_positive_edge);
+  RUN_TEST(movement_patrol_reverses_at_the_negative_edge);
+  RUN_TEST(movement_patrol_paces_vertically_across_a_tall_bounds);
+  RUN_TEST(movement_patrol_stays_still_with_a_degenerate_bounds);
+  RUN_TEST(movement_follow_closes_in_on_a_target_within_range);
+  RUN_TEST(movement_follow_does_not_overshoot_on_the_final_approach);
+  RUN_TEST(movement_follow_stays_put_when_the_target_is_out_of_range);
+  RUN_TEST(movement_follow_moves_toward_a_target_that_is_behind_the_actor);
+
+  RUN_TEST(trigger_rects_overlap_detects_intersecting_boxes);
+  RUN_TEST(trigger_rects_overlap_is_false_for_separated_boxes);
+  RUN_TEST(trigger_rects_overlap_treats_touching_edges_as_not_overlapping);
+  RUN_TEST(trigger_rects_overlap_is_false_for_zero_area_rects);
+  RUN_TEST(trigger_rects_overlap_handles_negative_coordinates);
+  RUN_TEST(trigger_find_overlap_returns_the_first_matching_zone);
+  RUN_TEST(trigger_find_overlap_returns_none_when_nothing_overlaps);
+  RUN_TEST(trigger_find_overlap_handles_a_null_zone_list_safely);
 
   RUN_TEST(multiple_scripts_run_concurrently_without_interfering);
   RUN_TEST(terminate_removes_a_specific_context_without_affecting_others);
