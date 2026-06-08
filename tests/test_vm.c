@@ -182,22 +182,201 @@ TEST(wait_opcode_pauses_the_script_for_n_frames) {
   reset_vm();
 
   static const uint8_t script[] = {
-      VM_OP_WAIT, 2, VM_OP_SET_SCENE_TONE, 9, VM_OP_END,
+      VM_OP_WAIT, 1, VM_OP_SET_SCENE_TONE, 9, VM_OP_END,
   };
   script_execute(0, (uint8_t *)script, NULL, 0);
 
-  // Frame 1: enters the wait, decrements once, nothing dispatched yet.
+  // Update 1: WAIT instruction is read — arms a 1-frame countdown. No frame
+  // has been "consumed" by the wait yet, nothing past WAIT has run.
   ASSERT_EQ(script_runner_update(), RUNNER_BUSY);
   ASSERT_EQ(stub_scene_tone_calls, 0);
 
-  // Frame 2: still waiting.
+  // Update 2: the countdown ticks down to zero. Still nothing dispatched —
+  // this update is entirely consumed by the wait.
   ASSERT_EQ(script_runner_update(), RUNNER_BUSY);
   ASSERT_EQ(stub_scene_tone_calls, 0);
 
-  // Frame 3: wait elapses, the rest of the script runs to completion.
+  // Update 3: wait_frames is now 0, so the script resumes and runs to
+  // completion in the same update.
   ASSERT_EQ(script_runner_update(), RUNNER_DONE);
   ASSERT_EQ(stub_scene_tone_calls, 1);
   ASSERT_EQ(stub_last_scene_tone, 9);
+}
+
+// ---------------------------------------------------------------------------
+// Variables & math opcodes
+// ---------------------------------------------------------------------------
+
+TEST(set_const_opcode_assigns_an_immediate_value_to_a_variable) {
+  reset_vm();
+
+  static const uint8_t script[] = {
+      VM_OP_SET_CONST, 0, 42, VM_OP_END,
+  };
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  ASSERT_EQ(script_runner_update(), RUNNER_DONE);
+  ASSERT_EQ(vm_variables[0], 42);
+}
+
+TEST(copy_var_opcode_copies_one_variables_value_into_another) {
+  reset_vm();
+
+  static const uint8_t script[] = {
+      VM_OP_SET_CONST, 1, 7, VM_OP_COPY_VAR, 2, 1, VM_OP_END,
+  };
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  ASSERT_EQ(script_runner_update(), RUNNER_DONE);
+  ASSERT_EQ(vm_variables[1], 7);
+  ASSERT_EQ(vm_variables[2], 7);
+}
+
+TEST(add_const_and_sub_const_opcodes_adjust_a_variable_in_place) {
+  reset_vm();
+
+  static const uint8_t script[] = {
+      VM_OP_SET_CONST, 0, 10, VM_OP_ADD_CONST, 0, 5,
+      VM_OP_SUB_CONST, 0, 3,  VM_OP_END,
+  };
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  ASSERT_EQ(script_runner_update(), RUNNER_DONE);
+  ASSERT_EQ(vm_variables[0], 12);
+}
+
+TEST(add_var_and_sub_var_opcodes_combine_two_variables) {
+  reset_vm();
+
+  static const uint8_t script[] = {
+      VM_OP_SET_CONST, 0, 10, VM_OP_SET_CONST, 1, 4,
+      VM_OP_ADD_VAR,   0, 1,  // var0 = 14
+      VM_OP_SET_CONST, 2, 20, VM_OP_SUB_VAR, 2, 1,  // var2 = 16
+      VM_OP_END,
+  };
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  ASSERT_EQ(script_runner_update(), RUNNER_DONE);
+  ASSERT_EQ(vm_variables[0], 14);
+  ASSERT_EQ(vm_variables[2], 16);
+}
+
+TEST(random_opcode_assigns_a_value_within_the_requested_range) {
+  reset_vm();
+  vm_seed_random(12345);
+
+  static const uint8_t script[] = {
+      VM_OP_RANDOM, 0, 10, 20, VM_OP_END,
+  };
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  ASSERT_EQ(script_runner_update(), RUNNER_DONE);
+  ASSERT_TRUE(vm_variables[0] >= 10 && vm_variables[0] <= 20);
+}
+
+// ---------------------------------------------------------------------------
+// Control flow — jumps & conditional branches
+// ---------------------------------------------------------------------------
+
+TEST(jump_opcode_skips_to_a_relative_offset) {
+  reset_vm();
+
+  // Layout (byte indices):
+  //   0: VM_OP_JUMP
+  //   1-2: offset (relative to index 3)
+  //   3: VM_OP_SET_CONST  4: var  5: value   <- skipped
+  //   6: VM_OP_SET_CONST  7: var  8: value   <- landed on
+  //   9: VM_OP_END
+  // We want to land on index 6, so offset = 6 - 3 = 3.
+  static const uint8_t script[] = {
+      VM_OP_JUMP,      3, 0,
+      VM_OP_SET_CONST, 0, 111,
+      VM_OP_SET_CONST, 0, 222,
+      VM_OP_END,
+  };
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  ASSERT_EQ(script_runner_update(), RUNNER_DONE);
+  ASSERT_EQ(vm_variables[0], 222);
+}
+
+TEST(if_var_eq_const_branches_when_the_condition_holds) {
+  reset_vm();
+
+  // Layout:
+  //   0: VM_OP_SET_CONST 1: var 2: value(5)
+  //   3: VM_OP_IF_VAR_EQ_CONST  4: var  5: value(5)  6-7: offset
+  //   8: VM_OP_SET_CONST 9: var 10: value(1)         <- skipped on branch
+  //   11: VM_OP_SET_CONST 12: var 13: value(2)       <- landed on
+  //   14: VM_OP_END
+  // offset is relative to index 8 (right after reading the offset operand);
+  // landing on index 11 means offset = 11 - 8 = 3.
+  static const uint8_t script[] = {
+      VM_OP_SET_CONST,       0, 5,
+      VM_OP_IF_VAR_EQ_CONST, 0, 5, 3, 0,
+      VM_OP_SET_CONST,       1, 1,
+      VM_OP_SET_CONST,       1, 2,
+      VM_OP_END,
+  };
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  ASSERT_EQ(script_runner_update(), RUNNER_DONE);
+  ASSERT_EQ(vm_variables[1], 2);
+}
+
+TEST(if_var_eq_const_falls_through_when_the_condition_fails) {
+  reset_vm();
+
+  // Same layout as above but var0 is 9, so the comparison against 5 is
+  // false — execution should fall through and run BOTH SET_CONSTs in turn,
+  // leaving var1 with the final value (2).
+  static const uint8_t script[] = {
+      VM_OP_SET_CONST,       0, 9,
+      VM_OP_IF_VAR_EQ_CONST, 0, 5, 3, 0,
+      VM_OP_SET_CONST,       1, 1,
+      VM_OP_SET_CONST,       1, 2,
+      VM_OP_END,
+  };
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  ASSERT_EQ(script_runner_update(), RUNNER_DONE);
+  ASSERT_EQ(vm_variables[1], 2);
+}
+
+TEST(if_var_gt_const_branches_only_when_the_variable_is_greater) {
+  reset_vm();
+
+  // var0 = 10, comparing > 5 → true → branch to index 11 (offset 3 from 8).
+  static const uint8_t script[] = {
+      VM_OP_SET_CONST,       0, 10,
+      VM_OP_IF_VAR_GT_CONST, 0, 5, 3, 0,
+      VM_OP_SET_CONST,       1, 1,
+      VM_OP_SET_CONST,       1, 2,
+      VM_OP_END,
+  };
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  ASSERT_EQ(script_runner_update(), RUNNER_DONE);
+  ASSERT_EQ(vm_variables[1], 2);
+}
+
+TEST(jump_and_conditional_branch_implement_a_counting_loop) {
+  reset_vm();
+
+  // A classic "repeat until" loop compiled down to raw opcodes:
+  //   var0 = 0
+  //   loop: var0 += 1
+  //         if var0 < 3, jump back to loop
+  //
+  // Byte layout:
+  //   0: VM_OP_SET_CONST  1: var(0)  2: value(0)
+  //   3: VM_OP_ADD_CONST  4: var(0)  5: value(1)        <- loop start
+  //   6: VM_OP_IF_VAR_LT_CONST 7: var(0) 8: value(3) 9-10: offset
+  //   11: VM_OP_END
+  //
+  // The offset is relative to the PC *after* the 2-byte offset operand is
+  // read, i.e. index 11; to land back on index 3 the offset is
+  // 3 - 11 = -8 = 0xFFF8 (LE: lo=0xF8, hi=0xFF).
+  static const uint8_t script[] = {
+      VM_OP_SET_CONST,       0, 0,
+      VM_OP_ADD_CONST,       0, 1,
+      VM_OP_IF_VAR_LT_CONST, 0, 3, 0xF8, 0xFF,
+      VM_OP_END,
+  };
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  ASSERT_EQ(script_runner_update(), RUNNER_DONE);
+  ASSERT_EQ(vm_variables[0], 3);
 }
 
 // ---------------------------------------------------------------------------
@@ -267,6 +446,18 @@ int main(void) {
   RUN_TEST(unknown_opcode_raises_an_exception_and_terminates_the_script);
 
   RUN_TEST(wait_opcode_pauses_the_script_for_n_frames);
+
+  RUN_TEST(set_const_opcode_assigns_an_immediate_value_to_a_variable);
+  RUN_TEST(copy_var_opcode_copies_one_variables_value_into_another);
+  RUN_TEST(add_const_and_sub_const_opcodes_adjust_a_variable_in_place);
+  RUN_TEST(add_var_and_sub_var_opcodes_combine_two_variables);
+  RUN_TEST(random_opcode_assigns_a_value_within_the_requested_range);
+
+  RUN_TEST(jump_opcode_skips_to_a_relative_offset);
+  RUN_TEST(if_var_eq_const_branches_when_the_condition_holds);
+  RUN_TEST(if_var_eq_const_falls_through_when_the_condition_fails);
+  RUN_TEST(if_var_gt_const_branches_only_when_the_variable_is_greater);
+  RUN_TEST(jump_and_conditional_branch_implement_a_counting_loop);
 
   RUN_TEST(multiple_scripts_run_concurrently_without_interfering);
   RUN_TEST(terminate_removes_a_specific_context_without_affecting_others);

@@ -39,6 +39,44 @@ typedef uint16_t UINT16;
 #define VM_OP_SET_SCENE_TONE 0x02
 #define VM_OP_WAIT 0x03
 
+// ---------------------------------------------------------------------------
+// Variables, math, and control flow
+//
+// These give a compiler something to actually target: a visual editor's
+// "set variable", "if/else", "repeat until" style events all compile down to
+// combinations of the opcodes below. Every variable is a signed 16-bit value;
+// indices are a single byte (0..VM_VARIABLE_COUNT-1, range-checked at
+// dispatch so a bad index is a no-op rather than a crash).
+//
+// Immediate operands are a single unsigned byte (0..255) — enough for loop
+// counters, small thresholds, RNG ranges, etc. Jump/branch targets are a
+// signed 16-bit, little-endian, *relative* offset measured from the
+// instruction immediately following the offset operand — i.e.
+// `new_PC = PC_after_reading_offset + offset`. This keeps compiled scripts
+// position-independent (no absolute addresses to relocate).
+// ---------------------------------------------------------------------------
+#define VM_VARIABLE_COUNT 256
+
+#define VM_OP_SET_CONST 0x04        // var, value
+#define VM_OP_COPY_VAR 0x05         // dst_var, src_var
+#define VM_OP_ADD_CONST 0x06        // var, value      (var += value)
+#define VM_OP_SUB_CONST 0x07        // var, value      (var -= value)
+#define VM_OP_ADD_VAR 0x08          // dst_var, src_var (dst += src)
+#define VM_OP_SUB_VAR 0x09          // dst_var, src_var (dst -= src)
+#define VM_OP_RANDOM 0x0A           // var, min, max   (var = random in [min, max])
+
+#define VM_OP_JUMP 0x0B                // offset
+#define VM_OP_IF_VAR_EQ_CONST 0x0C     // var, value, offset (branch if var == value)
+#define VM_OP_IF_VAR_GT_CONST 0x0D     // var, value, offset (branch if var >  value)
+#define VM_OP_IF_VAR_LT_CONST 0x0E     // var, value, offset (branch if var <  value)
+
+extern INT16 vm_variables[VM_VARIABLE_COUNT];
+
+// Reseed the script RNG (VM_OP_RANDOM). The engine should call this from
+// engine_init() with a value derived from hardware (e.g. REG_VCOUNT sampled
+// at an unpredictable moment); tests call it directly for determinism.
+void vm_seed_random(UWORD seed);
+
 typedef void (*SCRIPT_CMD_FN)(void);
 
 typedef struct SCRIPT_CMD {

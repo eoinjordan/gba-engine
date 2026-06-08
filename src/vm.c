@@ -19,6 +19,36 @@ UBYTE vm_exception_params_length;
 UBYTE vm_exception_params_bank;
 const void *vm_exception_params_offset;
 
+INT16 vm_variables[VM_VARIABLE_COUNT];
+
+// Small, fast xorshift16-style PRNG for VM_OP_RANDOM. Not cryptographic —
+// just needs to look random enough for game behaviour (item drops, enemy
+// choices, etc) and to be cheap on an ARM7TDMI with no hardware divider.
+static UWORD vm_rng_state = 0x2545F491;
+
+void vm_seed_random(UWORD seed) {
+  // A zero state is a fixed point for xorshift — never let it stick there.
+  vm_rng_state = seed != 0 ? seed : 0x2545F491;
+}
+
+static UWORD vm_random_next(void) {
+  UWORD x = vm_rng_state;
+  x ^= (UWORD)(x << 7);
+  x ^= (UWORD)(x >> 9);
+  x ^= (UWORD)(x << 8);
+  vm_rng_state = x;
+  return x;
+}
+
+// Jump/branch targets are encoded as a little-endian signed 16-bit relative
+// offset, measured from the instruction immediately following the offset
+// itself (i.e. from `ctx->PC` *after* this returns).
+static INT16 vm_read_offset(SCRIPT_CTX *ctx) {
+  UBYTE lo = *ctx->PC++;
+  UBYTE hi = *ctx->PC++;
+  return (INT16)(UWORD)(((UWORD)hi << 8) | (UWORD)lo);
+}
+
 static UWORD *context_stack_base(UBYTE index) {
   return &script_memory[VM_HEAP_SIZE + (index * VM_CONTEXT_STACK_SIZE)];
 }
@@ -38,6 +68,9 @@ void script_runner_init(UBYTE reset) {
   if (reset) {
     for (uint16_t i = 0; i < VM_HEAP_SIZE; i++) {
       script_memory[i] = 0;
+    }
+    for (uint16_t i = 0; i < VM_VARIABLE_COUNT; i++) {
+      vm_variables[i] = 0;
     }
   }
 
@@ -159,6 +192,114 @@ UBYTE script_runner_update(void) {
         ctx->wait_frames = *ctx->PC++;
         i = INSTRUCTIONS_PER_QUANT;
         break;
+
+      // -----------------------------------------------------------------
+      // Variables & math
+      // -----------------------------------------------------------------
+      case VM_OP_SET_CONST: {
+        UBYTE var = *ctx->PC++;
+        UBYTE value = *ctx->PC++;
+        if (var < VM_VARIABLE_COUNT) {
+          vm_variables[var] = (INT16)value;
+        }
+        break;
+      }
+
+      case VM_OP_COPY_VAR: {
+        UBYTE dst = *ctx->PC++;
+        UBYTE src = *ctx->PC++;
+        if (dst < VM_VARIABLE_COUNT && src < VM_VARIABLE_COUNT) {
+          vm_variables[dst] = vm_variables[src];
+        }
+        break;
+      }
+
+      case VM_OP_ADD_CONST: {
+        UBYTE var = *ctx->PC++;
+        UBYTE value = *ctx->PC++;
+        if (var < VM_VARIABLE_COUNT) {
+          vm_variables[var] = (INT16)(vm_variables[var] + (INT16)value);
+        }
+        break;
+      }
+
+      case VM_OP_SUB_CONST: {
+        UBYTE var = *ctx->PC++;
+        UBYTE value = *ctx->PC++;
+        if (var < VM_VARIABLE_COUNT) {
+          vm_variables[var] = (INT16)(vm_variables[var] - (INT16)value);
+        }
+        break;
+      }
+
+      case VM_OP_ADD_VAR: {
+        UBYTE dst = *ctx->PC++;
+        UBYTE src = *ctx->PC++;
+        if (dst < VM_VARIABLE_COUNT && src < VM_VARIABLE_COUNT) {
+          vm_variables[dst] = (INT16)(vm_variables[dst] + vm_variables[src]);
+        }
+        break;
+      }
+
+      case VM_OP_SUB_VAR: {
+        UBYTE dst = *ctx->PC++;
+        UBYTE src = *ctx->PC++;
+        if (dst < VM_VARIABLE_COUNT && src < VM_VARIABLE_COUNT) {
+          vm_variables[dst] = (INT16)(vm_variables[dst] - vm_variables[src]);
+        }
+        break;
+      }
+
+      case VM_OP_RANDOM: {
+        UBYTE var = *ctx->PC++;
+        UBYTE min_value = *ctx->PC++;
+        UBYTE max_value = *ctx->PC++;
+        if (var < VM_VARIABLE_COUNT) {
+          UBYTE lo = min_value < max_value ? min_value : max_value;
+          UBYTE hi = min_value < max_value ? max_value : min_value;
+          UWORD range = (UWORD)(hi - lo) + 1;
+          vm_variables[var] = (INT16)(lo + (vm_random_next() % range));
+        }
+        break;
+      }
+
+      // -----------------------------------------------------------------
+      // Control flow — relative jumps (see vm_read_offset / vm.h)
+      // -----------------------------------------------------------------
+      case VM_OP_JUMP: {
+        INT16 offset = vm_read_offset(ctx);
+        ctx->PC += offset;
+        break;
+      }
+
+      case VM_OP_IF_VAR_EQ_CONST:
+      case VM_OP_IF_VAR_GT_CONST:
+      case VM_OP_IF_VAR_LT_CONST: {
+        UBYTE var = *ctx->PC++;
+        UBYTE value = *ctx->PC++;
+        INT16 offset = vm_read_offset(ctx);
+        bool branch = false;
+
+        if (var < VM_VARIABLE_COUNT) {
+          INT16 current = vm_variables[var];
+          switch (opcode) {
+          case VM_OP_IF_VAR_EQ_CONST:
+            branch = current == (INT16)value;
+            break;
+          case VM_OP_IF_VAR_GT_CONST:
+            branch = current > (INT16)value;
+            break;
+          case VM_OP_IF_VAR_LT_CONST:
+            branch = current < (INT16)value;
+            break;
+          }
+        }
+
+        if (branch) {
+          ctx->PC += offset;
+        }
+        break;
+      }
 
       default:
         vm_exception_code = opcode;
