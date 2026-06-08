@@ -1,11 +1,14 @@
-// Unit tests for the bytecode script runner (src/vm.c).
+// Unit tests for the bytecode script runner (src/vm.c) and other portable,
+// hardware-free engine logic (e.g. src/camera.c).
 //
-// vm.c is plain, portable C with no hardware dependencies, so it can be
+// This code is plain, portable C with no hardware dependencies, so it can be
 // compiled and exercised directly on the host. These tests cover context
-// allocation/recycling, opcode dispatch, waiting, and exception handling —
-// the parts of the engine most likely to harbour subtle logic bugs and least
-// likely to need a real GBA (or emulator) to validate.
+// allocation/recycling, opcode dispatch, waiting, exception handling, and
+// camera follow/clamp math — the parts of the engine most likely to harbour
+// subtle logic bugs and least likely to need a real GBA (or emulator) to
+// validate.
 
+#include "camera.h"
 #include "test_framework.h"
 #include "test_stubs.h"
 #include "vm.h"
@@ -427,6 +430,82 @@ TEST(terminate_reports_failure_for_an_unknown_id) {
 }
 
 // ---------------------------------------------------------------------------
+// Camera follow/clamp math (src/camera.c)
+//
+// A 240x160 viewport (the GBA screen) is used throughout, matching
+// SCREEN_WIDTH/SCREEN_HEIGHT — the values the engine actually passes in.
+// ---------------------------------------------------------------------------
+
+#define TEST_VIEWPORT_W 240
+#define TEST_VIEWPORT_H 160
+
+TEST(camera_centres_on_target_within_a_large_scene) {
+  camera_t camera = {0, 0};
+
+  // A scene several screens wide/tall; the target sits well away from every
+  // edge, so the camera should simply centre on it: x - viewport/2.
+  camera_follow(&camera, 400, 300, TEST_VIEWPORT_W, TEST_VIEWPORT_H, 960, 640);
+
+  ASSERT_EQ(camera.x, 400 - TEST_VIEWPORT_W / 2);
+  ASSERT_EQ(camera.y, 300 - TEST_VIEWPORT_H / 2);
+}
+
+TEST(camera_clamps_to_zero_at_the_top_left_edge) {
+  camera_t camera = {99, 99};
+
+  // Target near the world's origin — centring would scroll into negative
+  // territory, which should be clamped to 0 on both axes.
+  camera_follow(&camera, 10, 5, TEST_VIEWPORT_W, TEST_VIEWPORT_H, 960, 640);
+
+  ASSERT_EQ(camera.x, 0);
+  ASSERT_EQ(camera.y, 0);
+}
+
+TEST(camera_clamps_to_max_scroll_at_the_bottom_right_edge) {
+  camera_t camera = {0, 0};
+
+  // Target near the world's far corner — centring would scroll past the
+  // bottom-right edge, which should be clamped to (world - viewport).
+  uint16_t scene_w = 960;
+  uint16_t scene_h = 640;
+  camera_follow(&camera, scene_w - 5, scene_h - 5, TEST_VIEWPORT_W,
+                TEST_VIEWPORT_H, scene_w, scene_h);
+
+  ASSERT_EQ(camera.x, scene_w - TEST_VIEWPORT_W);
+  ASSERT_EQ(camera.y, scene_h - TEST_VIEWPORT_H);
+}
+
+TEST(camera_locks_to_origin_when_the_scene_fits_within_the_viewport) {
+  camera_t camera = {42, 17};
+
+  // A scene no larger than the screen never scrolls — regardless of where
+  // the target is, the camera should sit at the origin.
+  camera_follow(&camera, 100, 80, TEST_VIEWPORT_W, TEST_VIEWPORT_H, 200, 150);
+
+  ASSERT_EQ(camera.x, 0);
+  ASSERT_EQ(camera.y, 0);
+}
+
+TEST(camera_locks_a_single_axis_when_only_that_axis_fits) {
+  camera_t camera = {0, 0};
+
+  // Wider-than-screen but shorter-than-screen world: X should follow/clamp
+  // normally, Y should be locked to 0.
+  uint16_t scene_w = 960;
+  uint16_t scene_h = 120;
+  camera_follow(&camera, 500, 60, TEST_VIEWPORT_W, TEST_VIEWPORT_H, scene_w,
+                scene_h);
+
+  ASSERT_EQ(camera.x, 500 - TEST_VIEWPORT_W / 2);
+  ASSERT_EQ(camera.y, 0);
+}
+
+TEST(camera_follow_is_a_no_op_when_given_a_null_camera) {
+  // Should not crash — just defensively does nothing.
+  camera_follow(NULL, 100, 100, TEST_VIEWPORT_W, TEST_VIEWPORT_H, 960, 640);
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -458,6 +537,13 @@ int main(void) {
   RUN_TEST(if_var_eq_const_falls_through_when_the_condition_fails);
   RUN_TEST(if_var_gt_const_branches_only_when_the_variable_is_greater);
   RUN_TEST(jump_and_conditional_branch_implement_a_counting_loop);
+
+  RUN_TEST(camera_centres_on_target_within_a_large_scene);
+  RUN_TEST(camera_clamps_to_zero_at_the_top_left_edge);
+  RUN_TEST(camera_clamps_to_max_scroll_at_the_bottom_right_edge);
+  RUN_TEST(camera_locks_to_origin_when_the_scene_fits_within_the_viewport);
+  RUN_TEST(camera_locks_a_single_axis_when_only_that_axis_fits);
+  RUN_TEST(camera_follow_is_a_no_op_when_given_a_null_camera);
 
   RUN_TEST(multiple_scripts_run_concurrently_without_interfering);
   RUN_TEST(terminate_removes_a_specific_context_without_affecting_others);

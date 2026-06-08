@@ -1,3 +1,4 @@
+#include "camera.h"
 #include "engine.h"
 #include "gba_scene.h"
 #include "gba_system.h"
@@ -76,6 +77,13 @@ static const gba_scene_def_t *current_scene_def;
 static uint8_t current_scene_index;
 static uint8_t current_palette_tone;
 static bool engine_running = true;
+
+// Scroll position. Actor 0 is treated as the player/camera target (the GB
+// Studio convention) — when present, the camera centres on it each frame and
+// clamps to the scene's pixel bounds so the viewport never shows past an
+// edge. Scenes no larger than one screen simply never scroll (camera stays
+// at the origin — see camera_follow's "world fits in viewport" case).
+static camera_t camera;
 
 // 16-colour background palette (bank 0). Mirrors the gba-blank template look:
 // dark border + light fill, on the classic GB green ramp.
@@ -194,6 +202,8 @@ static void init_scene_state(void) {
   current_scene_def = NULL;
   current_scene_index = 0;
   current_palette_tone = 0;
+  camera.x = 0;
+  camera.y = 0;
 
   for (uint8_t i = 0; i < MAX_ACTORS; i++) {
     actors[i].active = false;
@@ -235,6 +245,19 @@ void engine_update(void) {
       }
     }
   }
+
+  if (current_scene.num_actors > 0 && actors[0].active) {
+    camera_follow(&camera, (int16_t)actors[0].x, (int16_t)actors[0].y,
+                  SCREEN_WIDTH, SCREEN_HEIGHT,
+                  (uint16_t)current_scene.width * TILE_WIDTH,
+                  (uint16_t)current_scene.height * TILE_HEIGHT);
+  } else {
+    camera.x = 0;
+    camera.y = 0;
+  }
+
+  REG_BG0HOFS = (uint16_t)camera.x;
+  REG_BG0VOFS = (uint16_t)camera.y;
 }
 
 void engine_render(void) { wait_vblank(); }

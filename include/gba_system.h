@@ -13,6 +13,17 @@
 #define REG_BG2CNT     *(volatile uint16_t*)0x0400000C  // BG2 Control
 #define REG_BG3CNT     *(volatile uint16_t*)0x0400000E  // BG3 Control
 
+// Background scroll (write-only). Each is a 9-bit pixel offset; the high
+// bits are unused/ignored by hardware, so plain truncating writes are safe.
+#define REG_BG0HOFS    *(volatile uint16_t*)0x04000010  // BG0 Horizontal scroll
+#define REG_BG0VOFS    *(volatile uint16_t*)0x04000012  // BG0 Vertical scroll
+#define REG_BG1HOFS    *(volatile uint16_t*)0x04000014  // BG1 Horizontal scroll
+#define REG_BG1VOFS    *(volatile uint16_t*)0x04000016  // BG1 Vertical scroll
+#define REG_BG2HOFS    *(volatile uint16_t*)0x04000018  // BG2 Horizontal scroll
+#define REG_BG2VOFS    *(volatile uint16_t*)0x0400001A  // BG2 Vertical scroll
+#define REG_BG3HOFS    *(volatile uint16_t*)0x0400001C  // BG3 Horizontal scroll
+#define REG_BG3VOFS    *(volatile uint16_t*)0x0400001E  // BG3 Vertical scroll
+
 // Input registers
 #define REG_KEYINPUT   *(volatile uint16_t*)0x04000130  // Key Input
 
