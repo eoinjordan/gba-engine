@@ -9,6 +9,7 @@
 // validate.
 
 #include "camera.h"
+#include "collision.h"
 #include "test_framework.h"
 #include "test_stubs.h"
 #include "vm.h"
@@ -506,6 +507,124 @@ TEST(camera_follow_is_a_no_op_when_given_a_null_camera) {
 }
 
 // ---------------------------------------------------------------------------
+// Tile-based collision (src/collision.c)
+//
+// All maps below are 4x4 tiles (32x32px, TILE_W/H = 8px) — small enough to
+// lay out and reason about by hand, big enough to exercise multi-tile
+// rectangles and edge cases.
+// ---------------------------------------------------------------------------
+
+TEST(collision_rect_in_open_area_does_not_overlap_solid) {
+  // A single solid tile at (2, 1).
+  static const uint8_t map[16] = {
+      0, 0, 0, 0, //
+      0, 0, 1, 0, //
+      0, 0, 0, 0, //
+      0, 0, 0, 0,
+  };
+
+  // Rect entirely within tile (1, 1) — open ground.
+  ASSERT_FALSE(collision_rect_overlaps_solid(map, 4, 4, 8, 8, 8, 8));
+}
+
+TEST(collision_rect_overlapping_a_solid_tile_collides) {
+  static const uint8_t map[16] = {
+      0, 0, 0, 0, //
+      0, 0, 1, 0, //
+      0, 0, 0, 0, //
+      0, 0, 0, 0,
+  };
+
+  // Rect exactly covering the solid tile at (2, 1) -> px (16, 8).
+  ASSERT_TRUE(collision_rect_overlaps_solid(map, 4, 4, 16, 8, 8, 8));
+}
+
+TEST(collision_rect_spanning_multiple_tiles_collides_if_any_is_solid) {
+  static const uint8_t map[16] = {
+      0, 0, 0, 0, //
+      0, 0, 1, 0, //
+      0, 0, 0, 0, //
+      0, 0, 0, 0,
+  };
+
+  // A 16x16 rect straddling tiles (1,0)-(2,1): touches the solid (2,1).
+  ASSERT_TRUE(collision_rect_overlaps_solid(map, 4, 4, 12, 4, 16, 16));
+}
+
+TEST(collision_rect_outside_the_map_bounds_collides) {
+  static const uint8_t map[16] = {0};
+
+  // Straddles the left/top edge of the map — out-of-bounds tiles count as
+  // solid so actors can't walk off the world.
+  ASSERT_TRUE(collision_rect_overlaps_solid(map, 4, 4, -4, -4, 8, 8));
+}
+
+TEST(collision_with_a_null_map_never_collides) {
+  ASSERT_FALSE(collision_rect_overlaps_solid(NULL, 4, 4, 16, 8, 8, 8));
+}
+
+TEST(collision_resolve_movement_is_unobstructed_in_open_area) {
+  static const uint8_t map[16] = {0};
+
+  int16_t dx = 0, dy = 0;
+  collision_resolve_movement(map, 4, 4, /*left=*/0, /*top=*/0, /*w=*/8,
+                             /*h=*/8, /*dx=*/3, /*dy=*/2, &dx, &dy);
+
+  ASSERT_EQ(dx, 3);
+  ASSERT_EQ(dy, 2);
+}
+
+TEST(collision_resolve_movement_stops_an_actor_at_a_wall) {
+  // Solid column at tile x=2, every row — a wall running top to bottom.
+  static const uint8_t map[16] = {
+      0, 0, 1, 0, //
+      0, 0, 1, 0, //
+      0, 0, 1, 0, //
+      0, 0, 1, 0,
+  };
+
+  // Actor at (0, 0), 8x8 — one tile clear of the wall. Asking to move 10px
+  // right should stop it flush against the wall (left ends at 8, i.e. its
+  // right edge sits at px 15, immediately left of the solid tile at px 16).
+  int16_t dx = 99, dy = 99;
+  collision_resolve_movement(map, 4, 4, /*left=*/0, /*top=*/0, /*w=*/8,
+                             /*h=*/8, /*dx=*/10, /*dy=*/0, &dx, &dy);
+
+  ASSERT_EQ(dx, 8);
+  ASSERT_EQ(dy, 0);
+}
+
+TEST(collision_resolve_movement_slides_along_a_wall) {
+  // Same vertical wall as above (solid column at tile x=2).
+  static const uint8_t map[16] = {
+      0, 0, 1, 0, //
+      0, 0, 1, 0, //
+      0, 0, 1, 0, //
+      0, 0, 1, 0,
+  };
+
+  // Actor at (0, 0), 8x8, asked to move diagonally down-right (10, 10).
+  // X is blocked by the wall after 8px (as above); Y runs through open
+  // ground at column x=0..1 and should be completely unobstructed — the
+  // classic "slide along the wall instead of stopping dead" behaviour.
+  int16_t dx = 0, dy = 0;
+  collision_resolve_movement(map, 4, 4, /*left=*/0, /*top=*/0, /*w=*/8,
+                             /*h=*/8, /*dx=*/10, /*dy=*/10, &dx, &dy);
+
+  ASSERT_EQ(dx, 8);
+  ASSERT_EQ(dy, 10);
+}
+
+TEST(collision_resolve_movement_handles_null_outputs_gracefully) {
+  static const uint8_t map[16] = {0};
+  int16_t dx = 0;
+
+  // Should not crash when one of the output pointers is NULL.
+  collision_resolve_movement(map, 4, 4, 0, 0, 8, 8, 5, 5, &dx, NULL);
+  collision_resolve_movement(map, 4, 4, 0, 0, 8, 8, 5, 5, NULL, &dx);
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -544,6 +663,16 @@ int main(void) {
   RUN_TEST(camera_locks_to_origin_when_the_scene_fits_within_the_viewport);
   RUN_TEST(camera_locks_a_single_axis_when_only_that_axis_fits);
   RUN_TEST(camera_follow_is_a_no_op_when_given_a_null_camera);
+
+  RUN_TEST(collision_rect_in_open_area_does_not_overlap_solid);
+  RUN_TEST(collision_rect_overlapping_a_solid_tile_collides);
+  RUN_TEST(collision_rect_spanning_multiple_tiles_collides_if_any_is_solid);
+  RUN_TEST(collision_rect_outside_the_map_bounds_collides);
+  RUN_TEST(collision_with_a_null_map_never_collides);
+  RUN_TEST(collision_resolve_movement_is_unobstructed_in_open_area);
+  RUN_TEST(collision_resolve_movement_stops_an_actor_at_a_wall);
+  RUN_TEST(collision_resolve_movement_slides_along_a_wall);
+  RUN_TEST(collision_resolve_movement_handles_null_outputs_gracefully);
 
   RUN_TEST(multiple_scripts_run_concurrently_without_interfering);
   RUN_TEST(terminate_removes_a_specific_context_without_affecting_others);

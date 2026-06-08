@@ -1,4 +1,5 @@
 #include "camera.h"
+#include "collision.h"
 #include "engine.h"
 #include "gba_scene.h"
 #include "gba_system.h"
@@ -234,8 +235,23 @@ void engine_update(void) {
       continue;
     }
 
-    actor->x += actor->vel_x;
-    actor->y += actor->vel_y;
+    if (actor->collision_enabled && current_scene_def != NULL &&
+        (actor->vel_x != 0 || actor->vel_y != 0)) {
+      // Collision-aware movement: slide along walls (resolve X, then Y)
+      // rather than ignoring the map or stopping dead on first contact.
+      int16_t resolved_dx = 0;
+      int16_t resolved_dy = 0;
+      collision_resolve_movement(
+          current_scene_def->collisions, current_scene.width,
+          current_scene.height, (int16_t)actor->x, (int16_t)actor->y,
+          actor->bounds_w, actor->bounds_h, actor->vel_x, actor->vel_y,
+          &resolved_dx, &resolved_dy);
+      actor->x = (uint16_t)((int16_t)actor->x + resolved_dx);
+      actor->y = (uint16_t)((int16_t)actor->y + resolved_dy);
+    } else {
+      actor->x = (uint16_t)((int16_t)actor->x + actor->vel_x);
+      actor->y = (uint16_t)((int16_t)actor->y + actor->vel_y);
+    }
 
     if (actor->anim_speed > 0) {
       actor->anim_tick++;
