@@ -25,30 +25,57 @@ engine.json  Field/metadata definitions consumed by GBA Studio's compiler
 ### Architecture
 
 - **`gba_system.{c,h}`** — Hardware-abstraction layer: boot/init, VRAM and
-  palette access, vblank sync, key input, DMA copy/fill.
+  palette access, vblank sync, key input, DMA copy/fill, BG scroll registers.
 - **`engine.{c,h}`** — Engine loop (`engine_init`/`engine_update`/`engine_render`/`engine_run`),
   Mode 0 tiled background rendering (palette + tile + tilemap loading),
-  scene state, and actor spawn/destroy/update.
-- **`vm.{c,h}`** — Minimal bytecode interpreter (`script_execute`, `script_runner_*`)
-  driving scene loads and palette "tone" changes from compiled scripts.
+  scene state, actor spawn/destroy/update, camera follow, and
+  collision-aware actor movement.
+- **`vm.{c,h}`** — Bytecode interpreter (`script_execute`, `script_runner_*`):
+  context management/concurrency plus an opcode set covering scene loads,
+  palette "tone" changes, waits, 256 signed-16-bit variables, math
+  (set/copy/add/sub/random), and control flow (relative jumps and
+  variable-comparison branches) — enough for a visual editor's "set
+  variable", "if/else", and "repeat" events to compile down to.
+- **`camera.{c,h}`** — Pure follow/clamp math for scrolling a viewport
+  around a scene larger than one screen (centres on the player, clamps to
+  scene bounds, locks axes that fit within the viewport).
+- **`collision.{c,h}`** — Pure tile-map collision math: rectangle-vs-tilemap
+  overlap testing and per-axis "slide along walls" movement resolution.
+- **`text.{c,h}`** — Pure dialogue-text helpers: `{N}`-placeholder variable
+  substitution and greedy word-wrap to a fixed character width.
+- **`savegame.{c,h}`** — Pure save-data encode/decode: a fixed-size,
+  versioned, checksummed byte record covering scene index, player position,
+  and all VM variables, with explicit little-endian field encoding and
+  defensive decoding (bad size/magic/version/checksum is reported as
+  failure rather than handed back as if valid).
 - **`gba_types.h` / `gba_scene.h` / `gbs_types.h` / `bankdata.h`** — Shared
   types: screen/map dimensions, actor structs, scene definitions, compiled
   game-data layout.
 
 ## Status
 
-This is an early-stage runtime. It currently boots the GBA, renders a
-single Mode 0 tiled background, manages scene/actor state, and runs basic
-scripted scene transitions. The following subsystems are still being
-ported/built out as separate phases:
+This is an early-stage runtime, being built out in phases tracked against
+GB Studio's GBDK + gbvm stack. It currently boots the GBA, renders a single
+Mode 0 tiled background, manages scene/actor state, scrolls a camera around
+scenes larger than one screen, moves actors with tile-collision-aware
+"slide along walls" physics, and runs scripts through a VM with variables,
+math, conditionals, and control flow. The following subsystems still need
+their hardware-facing halves (rendering, audio, SRAM) — the portable logic
+underneath several of them already exists and is unit-tested (see below):
 
-- [ ] Text rendering (dialogue boxes, labels)
-- [ ] Full actor scripting (movement, interactions, conditionals)
+- [ ] Text/dialogue *rendering* (font/glyph tiles, text boxes, choices) —
+      variable substitution and word-wrap logic done (`text.{c,h}`)
+- [x] Actor scripting fundamentals (variables, math, conditionals, control
+      flow VM opcodes) — movement/interaction opcodes still to come
 - [ ] Scene triggers and events
-- [ ] Real background tile graphics from compiled art (vs. solid/checker test tiles)
+- [ ] Real background tile graphics from compiled art (vs. solid/checker test tiles) —
+      camera/scroll done (`camera.{c,h}`)
 - [ ] Sprite rendering via OAM
 - [ ] Audio (GBA APU / DirectSound)
-- [ ] Save/load system
+- [ ] Save/load *hardware* (SRAM HAL, opcodes, menu UI) — record format
+      done (`savegame.{c,h}`)
+- [x] Collision-aware actor movement (`collision.{c,h}`) — movement
+      *types* (static/platform/follow) and triggers still to come
 
 ## Building
 
@@ -66,11 +93,19 @@ This produces `bin/game.gba` — a flashable/emulatable GBA ROM.
 Two layers of testing back this engine, mirroring the split between
 "hardware-facing" and "portable" code described above:
 
-- **Unit tests (host-side, fast).** The bytecode VM/script-runner
-  (`src/vm.c`) is plain, portable C with no hardware dependencies, so it's
-  compiled and run directly with the host compiler — no devkitARM or emulator
-  needed. These cover context allocation/recycling, opcode dispatch,
-  `WAIT`/exception handling, and concurrent scripts.
+- **Unit tests (host-side, fast).** Several engine subsystems are
+  deliberately split into a "portable, hardware-free logic" half and a
+  "talks-to-real-hardware" half — the VM/script-runner (`src/vm.c`), camera
+  follow/clamp math (`src/camera.c`), tile collision math (`src/collision.c`),
+  dialogue text helpers (`src/text.c`), and save-data encode/decode
+  (`src/savegame.c`) are all plain, portable C with no hardware dependencies,
+  so they're compiled and run directly with the host compiler — no devkitARM
+  or emulator needed. The suite covers VM context allocation/recycling,
+  opcode dispatch (including variables, math, and control-flow opcodes),
+  `WAIT`/exception handling, concurrent scripts, camera centring/clamping,
+  tile-map collision detection and wall-sliding movement resolution,
+  placeholder substitution and word-wrap, and save-record round-tripping
+  plus every corruption-rejection path.
 
   ```sh
   make test
@@ -92,10 +127,12 @@ Both run automatically in CI on every push and PR (see
 
 ### Porting tests back into GBA Studio
 
-Because `tests/` only depends on `include/vm.h` and `src/vm.c` (plus the
-host compiler), it can be copied wholesale into GBA Studio's
-`appData/engine/gbavm/` alongside the engine sources it tests — just wire
-up an equivalent `make test` target there and the same suite runs in place.
+Because `tests/` only depends on a handful of portable headers/sources
+(`vm.{c,h}`, `camera.{c,h}`, `collision.{c,h}`, `text.{c,h}`,
+`savegame.{c,h}`) plus the host compiler, it can be copied wholesale into
+GBA Studio's `appData/engine/gbavm/` alongside the engine sources it tests —
+just wire up an equivalent `make test` target there and the same suite runs
+in place.
 
 ## Using this engine elsewhere
 
