@@ -10,6 +10,15 @@ This engine started life as the runtime backend for [GBA Studio](https://github.
 pulled out into its own repo so it can be reused or embedded in other GBA
 projects independent of the studio's editor/compiler.
 
+**GBA Studio now consumes this repo as a git submodule**, mounted at
+`appData/engine/gbavm` (see `.gitmodules` in that repo). The studio's
+editor/compiler paths are unchanged — they still point at
+`appData/engine/gbavm` — but the engine source of truth lives here, and
+GBA Studio just pins a commit of it. That means: changes meant to ship in
+GBA Studio land here first (with host tests), then GBA Studio bumps its
+submodule pointer to pick them up. See "Porting tests back into GBA
+Studio" below for how the test suite travels with it.
+
 ## What's here
 
 ```
@@ -125,14 +134,26 @@ Two layers of testing back this engine, mirroring the split between
 Both run automatically in CI on every push and PR (see
 `.github/workflows/ci.yml`).
 
-### Porting tests back into GBA Studio
+### This suite travels with GBA Studio via the submodule
 
-Because `tests/` only depends on a handful of portable headers/sources
+`tests/` only depends on a handful of portable headers/sources
 (`vm.{c,h}`, `camera.{c,h}`, `collision.{c,h}`, `text.{c,h}`,
-`savegame.{c,h}`) plus the host compiler, it can be copied wholesale into
-GBA Studio's `appData/engine/gbavm/` alongside the engine sources it tests —
-just wire up an equivalent `make test` target there and the same suite runs
-in place.
+`savegame.{c,h}`) plus the host compiler — and now that GBA Studio mounts
+this repo at `appData/engine/gbavm` as a git submodule, the suite simply
+*comes along for the ride*. No copying or syncing required: whatever
+commit GBA Studio's submodule pointer is pinned to, that's the exact test
+suite (and engine source) available at `appData/engine/gbavm/`. Wiring up
+an equivalent `make test` target in GBA Studio's build tooling runs the
+very same suite in place, against the very same sources.
+
+Practically, this means the workflow for engine changes is:
+
+1. Land the change here (in `gba-engine`), with host tests, and push.
+2. In GBA Studio, bump the submodule pointer
+   (`git -C appData/engine/gbavm pull && git add appData/engine/gbavm`)
+   to the new commit.
+3. Run `make test` from GBA Studio's tooling to confirm the suite still
+   passes against the pinned commit before committing the bump.
 
 ## Using this engine elsewhere
 
