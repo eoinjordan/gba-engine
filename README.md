@@ -53,13 +53,19 @@ engine.json  Field/metadata definitions consumed by GBA Studio's compiler
 - **`movement.{c,h}`** — Pure per-actor movement-pattern math (GB Studio's
   "movement types"): patrol (pace back and forth across a bounds rectangle,
   reversing at each edge) and follow (walk toward a target on each axis
-  independently while within range, without overshooting). Logic is done
-  and tested; not yet wired into `engine_update` pending new compiled-data
-  fields (move speed, patrol/follow bounds) — see Status below.
+  independently while within range, without overshooting). Wired into
+  `engine_update` via `actor_t.movement_type`/`move_speed`/
+  `movement_bounds_*` — non-player actors (index > 0) compute their
+  velocity from their assigned pattern every frame, then flow through the
+  same tile-collision "slide along walls" resolution as player movement.
 - **`trigger.{c,h}`** — Pure scene-trigger geometry: axis-aligned overlap
   testing between an actor and rectangular trigger zones, plus a
-  deterministic first-match scan over a scene's zones. Logic is done and
-  tested; not yet wired in pending a finalised compiled trigger-zone format.
+  deterministic first-match scan over a scene's zones. Wired into
+  `engine_update` via `gba_scene_def_t.triggers` (tile-coordinate zones,
+  mirroring `collisions`): each frame the player actor's bounds are checked
+  against every zone, and a zone's script runs once on entry (tracked so it
+  doesn't refire every frame the player stands inside it, but does refire
+  on re-entry after leaving).
 - **`text.{c,h}`** — Pure dialogue-text helpers: `{N}`-placeholder variable
   substitution and greedy word-wrap to a fixed character width.
 - **`savegame.{c,h}`** — Pure save-data encode/decode: a fixed-size,
@@ -86,9 +92,9 @@ underneath several of them already exists and is unit-tested (see below):
       variable substitution and word-wrap logic done (`text.{c,h}`)
 - [x] Actor scripting fundamentals (variables, math, conditionals, control
       flow VM opcodes) — movement/interaction opcodes still to come
-- [ ] Scene triggers and events — overlap-detection logic done
-      (`trigger.{c,h}`); needs a compiled trigger-zone data format and
-      VM/engine wiring to actually run a zone's script on entry
+- [x] Scene triggers and events — `gba_trigger_def_t` zones (tile-coordinate
+      bounds + script pointer, mirroring `collisions`) wired into
+      `engine_update`: a zone's script runs once when the player enters it
 - [ ] Real background tile graphics from compiled art (vs. solid/checker test tiles) —
       camera/scroll done (`camera.{c,h}`)
 - [ ] Sprite rendering via OAM
@@ -96,10 +102,10 @@ underneath several of them already exists and is unit-tested (see below):
 - [ ] Save/load *hardware* (SRAM HAL, opcodes, menu UI) — record format
       done (`savegame.{c,h}`)
 - [x] Collision-aware actor movement (`collision.{c,h}`)
-- [ ] Movement *types* (static/patrol/follow) — velocity logic done
-      (`movement.{c,h}`); needs new per-actor compiled-data fields (move
-      speed, patrol/follow bounds distinct from the collision hitbox) before
-      it can drive `engine_update`
+- [x] Movement *types* (static/patrol/follow) — `movement.{c,h}` velocity
+      math drives non-player actors via `actor_t.movement_type`/
+      `move_speed`/`movement_bounds_*`, through the same collision-aware
+      resolution as player movement
 
 ## Building
 

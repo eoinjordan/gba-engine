@@ -79,10 +79,24 @@ typedef struct actor_t
     uint8_t anim_tick;
     uint8_t collision_group;
     uint8_t movement_type;
+    // Pixels/frame for MOVEMENT_TYPE_PATROL/MOVEMENT_TYPE_FOLLOW (see
+    // movement.{c,h}). Unused (and harmless) for MOVEMENT_TYPE_STATIC.
+    uint8_t move_speed;
     uint16_t bounds_x;
     uint16_t bounds_y;
     uint16_t bounds_w;
     uint16_t bounds_h;
+    // Movement-pattern parameters, interpreted per `movement_type`:
+    //   MOVEMENT_TYPE_PATROL: a pixel-space rectangle the actor paces back
+    //     and forth across (see movement_patrol's bounds_* parameters).
+    //   MOVEMENT_TYPE_FOLLOW: only movement_bounds_w is used, as the
+    //     actor's square aggro range in pixels (see movement_follow's
+    //     `range` parameter); the other three fields are ignored.
+    //   MOVEMENT_TYPE_STATIC: ignored entirely.
+    uint16_t movement_bounds_x;
+    uint16_t movement_bounds_y;
+    uint16_t movement_bounds_w;
+    uint16_t movement_bounds_h;
 } actor_t;
 
 typedef struct scene_t
