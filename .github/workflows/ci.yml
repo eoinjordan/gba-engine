@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Unit-test the portable parts of the engine (the bytecode VM/script-runner)
+  # with the host toolchain. Fast — no devkitARM, no emulator required.
+  unit-tests:
+    name: Unit tests (host)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run host-side unit tests
+        run: make test HOST_CC=gcc
+
+  # Build an actual .gba ROM with devkitARM to make sure the engine still
+  # compiles and links for the real target. This is the part unit tests can't
+  # cover — register layout, linker script, ABI, etc.
+  build-rom:
+    name: Build ROM (devkitARM)
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build .gba ROM
+        run: make DEVKITPRO=/opt/devkitpro DEVKITARM=/opt/devkitpro/devkitARM
+
+      - name: Verify ROM header
+        run: |
+          test -f bin/game.gba
+          ls -la bin/game.gba
+          # A ROM fixed up by gbafix is at least large enough to contain the
+          # 192-byte GBA header — a cheap sanity check that the build produced
+          # a real, finished ROM and not a stray empty file.
+          size=$(stat -c%s bin/game.gba)
+          echo "ROM size: $size bytes"
+          test "$size" -ge 192
+
+      - name: Upload ROM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: game-rom
+          path: bin/game.gba

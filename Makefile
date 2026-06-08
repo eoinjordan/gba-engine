@@ -56,3 +56,23 @@ clean:
 
 # Phony targets
 .PHONY: all clean
+
+# ---------------------------------------------------------------------------
+# Host-side unit tests
+#
+# Most of the engine talks directly to GBA hardware (memory-mapped registers,
+# VRAM, OAM) and can only be meaningfully exercised on real hardware or in an
+# emulator. The bytecode VM/script-runner (src/vm.c), however, is plain
+# portable C, so it's compiled and run here with the host toolchain — fast
+# feedback without needing devkitARM or a GBA at all.
+# ---------------------------------------------------------------------------
+HOST_CC ?= gcc
+HOST_CFLAGS := -std=c11 -Wall -Wextra -I$(INCDIR) -Itests
+TEST_BIN := $(BINDIR)/test_runner
+TEST_SOURCES := tests/test_vm.c tests/test_stubs.c $(SRCDIR)/vm.c
+
+test: | $(BINDIR)
+	$(HOST_CC) $(HOST_CFLAGS) $(TEST_SOURCES) -o $(TEST_BIN)
+	$(TEST_BIN)
+
+.PHONY: test

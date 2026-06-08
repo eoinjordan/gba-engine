@@ -1,0 +1,6 @@
+obj/
+bin/*.gba
+bin/*.elf
+bin/*.map
+*.o
+.DS_Store
