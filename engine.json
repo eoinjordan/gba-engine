@@ -92,6 +92,10 @@
     {
       "key": "LOGO",
       "label": "LOGO"
+    },
+    {
+      "key": "ISOMETRIC",
+      "label": "GAMETYPE_ISOMETRIC"
     }
   ],
   "consts": {
