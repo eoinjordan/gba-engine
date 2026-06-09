@@ -7,6 +7,11 @@ extern void vm_scene_load(UBYTE scene_index);
 extern void vm_scene_set_tone(UBYTE tone);
 extern void textbox_open(const char *text);
 extern bool textbox_update(void);
+extern UWORD vm_get_keys(void);
+extern void vm_actor_set_position(UBYTE actor, UBYTE x, UBYTE y);
+extern void vm_actor_move_relative(UBYTE actor, INT8 dx, INT8 dy);
+extern void vm_actor_set_direction(UBYTE actor, UBYTE dir);
+extern void vm_actor_set_hidden(UBYTE actor, UBYTE hidden);
 
 UWORD script_memory[VM_HEAP_SIZE + (VM_MAX_CONTEXTS * VM_CONTEXT_STACK_SIZE)];
 SCRIPT_CTX CTXS[VM_MAX_CONTEXTS];
@@ -317,6 +322,50 @@ UBYTE script_runner_update(void) {
         // render before the runner polls again.
         ctx->update_fn = (void *)textbox_update;
         i = INSTRUCTIONS_PER_QUANT;
+        break;
+      }
+
+      // -----------------------------------------------------------------
+      // Input & actors
+      // -----------------------------------------------------------------
+      case VM_OP_IF_INPUT: {
+        UBYTE lo = *ctx->PC++;
+        UBYTE hi = *ctx->PC++;
+        UWORD mask = (UWORD)(((UWORD)hi << 8) | (UWORD)lo);
+        INT16 offset = vm_read_offset(ctx);
+        if ((vm_get_keys() & mask) != 0) {
+          ctx->PC += offset;
+        }
+        break;
+      }
+
+      case VM_OP_ACTOR_SET_POS: {
+        UBYTE actor = *ctx->PC++;
+        UBYTE x = *ctx->PC++;
+        UBYTE y = *ctx->PC++;
+        vm_actor_set_position(actor, x, y);
+        break;
+      }
+
+      case VM_OP_ACTOR_MOVE_REL: {
+        UBYTE actor = *ctx->PC++;
+        INT8 dx = (INT8)*ctx->PC++;
+        INT8 dy = (INT8)*ctx->PC++;
+        vm_actor_move_relative(actor, dx, dy);
+        break;
+      }
+
+      case VM_OP_ACTOR_SET_DIR: {
+        UBYTE actor = *ctx->PC++;
+        UBYTE dir = *ctx->PC++;
+        vm_actor_set_direction(actor, dir);
+        break;
+      }
+
+      case VM_OP_ACTOR_SET_HIDDEN: {
+        UBYTE actor = *ctx->PC++;
+        UBYTE hidden = *ctx->PC++;
+        vm_actor_set_hidden(actor, hidden);
         break;
       }
 

@@ -155,6 +155,88 @@ TEST(set_scene_tone_opcode_dispatches_to_the_engine_with_its_argument) {
   ASSERT_EQ(stub_last_scene_tone, 2);
 }
 
+TEST(if_input_branches_when_a_masked_key_is_held) {
+  reset_vm();
+  stub_keys = 0x0001; // KEY_A held
+
+  // IF_INPUT mask=0x0001 offset=+3 (skip the SET_CONST 0,9), then END.
+  static const uint8_t script[] = {
+      VM_OP_IF_INPUT, 0x01, 0x00, 0x03, 0x00,
+      VM_OP_SET_CONST, 0, 9,
+      VM_OP_SET_CONST, 0, 5, VM_OP_END,
+  };
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  script_runner_update();
+
+  // Branch taken → skipped the "9" write, ran the "5" write.
+  ASSERT_EQ(vm_variables[0], 5);
+}
+
+TEST(if_input_does_not_branch_when_key_is_not_held) {
+  reset_vm();
+  stub_keys = 0x0000;
+
+  static const uint8_t script[] = {
+      VM_OP_IF_INPUT, 0x01, 0x00, 0x03, 0x00,
+      VM_OP_SET_CONST, 0, 9,
+      VM_OP_SET_CONST, 0, 5, VM_OP_END,
+  };
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  script_runner_update();
+
+  // No branch → both writes ran, last one wins.
+  ASSERT_EQ(vm_variables[0], 5);
+}
+
+TEST(actor_set_position_dispatches_index_and_coords) {
+  reset_vm();
+
+  static const uint8_t script[] = {VM_OP_ACTOR_SET_POS, 2, 5, 7, VM_OP_END};
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  script_runner_update();
+
+  ASSERT_EQ(stub_actor_set_pos_calls, 1);
+  ASSERT_EQ(stub_last_actor_index, 2);
+  ASSERT_EQ(stub_last_actor_x, 5);
+  ASSERT_EQ(stub_last_actor_y, 7);
+}
+
+TEST(actor_move_relative_decodes_signed_deltas) {
+  reset_vm();
+
+  // dx = 0xFF (-1), dy = 0x02 (+2)
+  static const uint8_t script[] = {VM_OP_ACTOR_MOVE_REL, 0, 0xFF, 0x02, VM_OP_END};
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  script_runner_update();
+
+  ASSERT_EQ(stub_actor_move_rel_calls, 1);
+  ASSERT_EQ(stub_last_actor_dx, -1);
+  ASSERT_EQ(stub_last_actor_dy, 2);
+}
+
+TEST(actor_set_direction_dispatches_direction) {
+  reset_vm();
+
+  static const uint8_t script[] = {VM_OP_ACTOR_SET_DIR, 1, 3, VM_OP_END};
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  script_runner_update();
+
+  ASSERT_EQ(stub_actor_set_dir_calls, 1);
+  ASSERT_EQ(stub_last_actor_index, 1);
+  ASSERT_EQ(stub_last_actor_dir, 3);
+}
+
+TEST(actor_set_hidden_dispatches_flag) {
+  reset_vm();
+
+  static const uint8_t script[] = {VM_OP_ACTOR_SET_HIDDEN, 0, 1, VM_OP_END};
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  script_runner_update();
+
+  ASSERT_EQ(stub_actor_set_hidden_calls, 1);
+  ASSERT_EQ(stub_last_actor_hidden, 1);
+}
+
 TEST(multiple_opcodes_run_in_sequence_within_a_single_script) {
   reset_vm();
 
@@ -1101,6 +1183,12 @@ int main(void) {
   RUN_TEST(end_opcode_terminates_the_script_and_reports_done);
   RUN_TEST(load_scene_opcode_dispatches_to_the_engine_with_its_argument);
   RUN_TEST(set_scene_tone_opcode_dispatches_to_the_engine_with_its_argument);
+  RUN_TEST(if_input_branches_when_a_masked_key_is_held);
+  RUN_TEST(if_input_does_not_branch_when_key_is_not_held);
+  RUN_TEST(actor_set_position_dispatches_index_and_coords);
+  RUN_TEST(actor_move_relative_decodes_signed_deltas);
+  RUN_TEST(actor_set_direction_dispatches_direction);
+  RUN_TEST(actor_set_hidden_dispatches_flag);
   RUN_TEST(multiple_opcodes_run_in_sequence_within_a_single_script);
   RUN_TEST(unknown_opcode_raises_an_exception_and_terminates_the_script);
 

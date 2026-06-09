@@ -857,6 +857,53 @@ void vm_scene_set_tone(uint8_t tone) {
   }
 }
 
+// --- VM actor/input hooks (called from vm.c) -------------------------------
+// Actor indices are runtime indices: 0 is the player, 1..N the scene actors.
+
+uint16_t vm_get_keys(void) { return get_keys(); }
+
+static actor_t *vm_actor(uint8_t actor_index) {
+  if (actor_index >= current_scene.num_actors) {
+    return NULL;
+  }
+  actor_t *actor = &actors[actor_index];
+  return actor->active ? actor : NULL;
+}
+
+void vm_actor_set_position(uint8_t actor_index, uint8_t x, uint8_t y) {
+  actor_t *actor = vm_actor(actor_index);
+  if (actor == NULL) {
+    return;
+  }
+  actor->x = x;
+  actor->y = y;
+}
+
+void vm_actor_move_relative(uint8_t actor_index, int8_t dx, int8_t dy) {
+  actor_t *actor = vm_actor(actor_index);
+  if (actor == NULL) {
+    return;
+  }
+  actor->x = (uint16_t)((int16_t)actor->x + dx);
+  actor->y = (uint16_t)((int16_t)actor->y + dy);
+}
+
+void vm_actor_set_direction(uint8_t actor_index, uint8_t dir) {
+  actor_t *actor = vm_actor(actor_index);
+  if (actor == NULL) {
+    return;
+  }
+  actor->dir = dir;
+}
+
+void vm_actor_set_hidden(uint8_t actor_index, uint8_t hidden) {
+  actor_t *actor = vm_actor(actor_index);
+  if (actor == NULL) {
+    return;
+  }
+  actor->hidden = hidden != 0;
+}
+
 actor_t *spawn_actor(uint8_t sprite_index, uint16_t x, uint16_t y) {
   for (uint8_t i = 0; i < MAX_ACTORS; i++) {
     actor_t *actor = &actors[i];

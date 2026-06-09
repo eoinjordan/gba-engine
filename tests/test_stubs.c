@@ -11,6 +11,19 @@ int stub_textbox_open_calls = 0;
 const char *stub_last_textbox_text = NULL;
 bool stub_textbox_dismiss_next = false;
 
+uint16_t stub_keys = 0;
+int stub_actor_set_pos_calls = 0;
+uint8_t stub_last_actor_index = 0;
+uint8_t stub_last_actor_x = 0;
+uint8_t stub_last_actor_y = 0;
+int stub_actor_move_rel_calls = 0;
+int8_t stub_last_actor_dx = 0;
+int8_t stub_last_actor_dy = 0;
+int stub_actor_set_dir_calls = 0;
+uint8_t stub_last_actor_dir = 0;
+int stub_actor_set_hidden_calls = 0;
+uint8_t stub_last_actor_hidden = 0;
+
 void stub_reset(void) {
   stub_scene_load_calls = 0;
   stub_last_scene_index = 0;
@@ -19,6 +32,18 @@ void stub_reset(void) {
   stub_textbox_open_calls = 0;
   stub_last_textbox_text = NULL;
   stub_textbox_dismiss_next = false;
+  stub_keys = 0;
+  stub_actor_set_pos_calls = 0;
+  stub_last_actor_index = 0;
+  stub_last_actor_x = 0;
+  stub_last_actor_y = 0;
+  stub_actor_move_rel_calls = 0;
+  stub_last_actor_dx = 0;
+  stub_last_actor_dy = 0;
+  stub_actor_set_dir_calls = 0;
+  stub_last_actor_dir = 0;
+  stub_actor_set_hidden_calls = 0;
+  stub_last_actor_hidden = 0;
 }
 
 // vm.c declares these `extern` and calls them directly when it executes
@@ -49,3 +74,33 @@ bool textbox_update(void) {
 
 void textbox_close(void) {}
 void textbox_init(void) {}
+
+// Input / actor hooks — vm.c calls these for VM_OP_IF_INPUT and the
+// VM_OP_ACTOR_* opcodes. Record calls so tests assert VM dispatch in isolation.
+uint16_t vm_get_keys(void) { return stub_keys; }
+
+void vm_actor_set_position(uint8_t actor, uint8_t x, uint8_t y) {
+  stub_actor_set_pos_calls++;
+  stub_last_actor_index = actor;
+  stub_last_actor_x = x;
+  stub_last_actor_y = y;
+}
+
+void vm_actor_move_relative(uint8_t actor, int8_t dx, int8_t dy) {
+  stub_actor_move_rel_calls++;
+  stub_last_actor_index = actor;
+  stub_last_actor_dx = dx;
+  stub_last_actor_dy = dy;
+}
+
+void vm_actor_set_direction(uint8_t actor, uint8_t dir) {
+  stub_actor_set_dir_calls++;
+  stub_last_actor_index = actor;
+  stub_last_actor_dir = dir;
+}
+
+void vm_actor_set_hidden(uint8_t actor, uint8_t hidden) {
+  stub_actor_set_hidden_calls++;
+  stub_last_actor_index = actor;
+  stub_last_actor_hidden = hidden;
+}

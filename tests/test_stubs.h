@@ -21,6 +21,20 @@ extern int stub_textbox_open_calls;
 extern const char *stub_last_textbox_text;
 extern bool stub_textbox_dismiss_next;
 
+// Input / actor stubs for VM_OP_IF_INPUT and VM_OP_ACTOR_* dispatch tests.
+extern uint16_t stub_keys;
+extern int stub_actor_set_pos_calls;
+extern uint8_t stub_last_actor_index;
+extern uint8_t stub_last_actor_x;
+extern uint8_t stub_last_actor_y;
+extern int stub_actor_move_rel_calls;
+extern int8_t stub_last_actor_dx;
+extern int8_t stub_last_actor_dy;
+extern int stub_actor_set_dir_calls;
+extern uint8_t stub_last_actor_dir;
+extern int stub_actor_set_hidden_calls;
+extern uint8_t stub_last_actor_hidden;
+
 void stub_reset(void);
 
 #endif // GBA_ENGINE_TEST_STUBS_H

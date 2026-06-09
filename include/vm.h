@@ -78,6 +78,33 @@ typedef uint16_t UINT16;
 // Encoding: VM_OP_SHOW_TEXT, 'H','e','l','l','o',0x00, [next opcode...]
 #define VM_OP_SHOW_TEXT 0x0F
 
+// ---------------------------------------------------------------------------
+// Input & actors
+//
+// Actor indices are runtime indices: 0 is the player, 1..N are the scene's
+// compiled actors in declaration order. A bad index is a no-op.
+// ---------------------------------------------------------------------------
+
+// Branch if any of the masked buttons are currently held. The mask is a
+// little-endian 16-bit GBA key mask (KEY_A=0x0001 .. KEY_L=0x0200), matching
+// gba_system.h. Encoding: VM_OP_IF_INPUT, mask_lo, mask_hi, offset_lo, offset_hi
+#define VM_OP_IF_INPUT 0x10
+
+// actor, x, y — set actor position. Units match the actor model for the
+// current scene (tile coords for isometric, pixel coords for top-down).
+#define VM_OP_ACTOR_SET_POS 0x11
+
+// actor, dx, dy — move actor by a signed delta (each operand is a signed byte
+// stored as u8; -1 == 0xFF). Same units as VM_OP_ACTOR_SET_POS.
+#define VM_OP_ACTOR_MOVE_REL 0x12
+
+// actor, dir — set facing direction (0=down,1=left,2=right,3=up; GB Studio
+// direction_e order). Stored for animation; harmless if unused by renderer.
+#define VM_OP_ACTOR_SET_DIR 0x13
+
+// actor, hidden — show (0) or hide (1) an actor.
+#define VM_OP_ACTOR_SET_HIDDEN 0x14
+
 extern INT16 vm_variables[VM_VARIABLE_COUNT];
 
 // Reseed the script RNG (VM_OP_RANDOM). The engine should call this from
