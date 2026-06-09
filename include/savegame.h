@@ -21,6 +21,7 @@
 #include <stddef.h>
 #include "vm.h"
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 // The exact on-"disk" (SRAM) size of an encoded save record. Exposed so
