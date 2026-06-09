@@ -68,6 +68,23 @@ typedef struct gba_scene_def_t {
   const gba_trigger_def_t *triggers;
 } gba_scene_def_t;
 
+// Scene type identifiers (must match compileData.ts sceneTypeIds)
+#define SCENE_TYPE_TOPDOWN    0
+#define SCENE_TYPE_PLATFORM   1
+#define SCENE_TYPE_ADVENTURE  2
+#define SCENE_TYPE_SHMUP      3
+#define SCENE_TYPE_POINTNCLICK 4
+#define SCENE_TYPE_LOGO       5
+#define SCENE_TYPE_ISOMETRIC  6
+
+// Extended scene definition for isometric scenes.
+// Safe to cast gba_iso_scene_def_t* <-> gba_scene_def_t* because base is first.
+typedef struct gba_iso_scene_def_t {
+  gba_scene_def_t base;
+  uint8_t iso_tile_w;  // projected tile width  in screen px (default 32)
+  uint8_t iso_tile_h;  // projected tile height in screen px (default 16)
+} gba_iso_scene_def_t;
+
 typedef struct gba_game_data_t {
   uint8_t scene_count;
   uint8_t start_scene_index;

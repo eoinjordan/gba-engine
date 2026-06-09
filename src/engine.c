@@ -86,6 +86,32 @@ static uint8_t current_palette_tone;
 static uint16_t loaded_sprite_tile_bases[MAX_SCENE_SPRITES];
 static bool engine_running = true;
 
+// Isometric projection params (only meaningful when scene type == ISOMETRIC).
+// iso_origin_x centres the diamond grid: tile(0,0) appears at the top-centre
+// of the canvas rather than the top-left corner.
+static uint8_t  iso_tile_w   = 32;  // projected tile width  (screen px)
+static uint8_t  iso_tile_h   = 16;  // projected tile height (screen px)
+static int16_t  iso_origin_x = 0;   // = scene_width * iso_tile_w / 2
+
+// Convert isometric tile coordinates to screen pixel coordinates.
+// Actors in ISO scenes store tile indices in x/y; this gives OAM position.
+static inline int16_t iso_screen_x(int16_t tile_x, int16_t tile_y) {
+  return iso_origin_x + (tile_x - tile_y) * (iso_tile_w / 2);
+}
+static inline int16_t iso_screen_y(int16_t tile_x, int16_t tile_y) {
+  return (tile_x + tile_y) * (iso_tile_h / 2);
+}
+
+// Convert screen px back to tile coords (ground plane, iso_z = 0).
+static inline int16_t iso_tile_x_from_screen(int16_t sx, int16_t sy) {
+  int16_t sx_rel = sx - iso_origin_x;
+  return (int16_t)(((int32_t)sy * 2 / iso_tile_h + (int32_t)sx_rel * 2 / iso_tile_w) / 2);
+}
+static inline int16_t iso_tile_y_from_screen(int16_t sx, int16_t sy) {
+  int16_t sx_rel = sx - iso_origin_x;
+  return (int16_t)(((int32_t)sy * 2 / iso_tile_h - (int32_t)sx_rel * 2 / iso_tile_w) / 2);
+}
+
 // Scroll position. Actor 0 is treated as the player/camera target (the GB
 // Studio convention) — when present, the camera centres on it each frame and
 // clamps to the scene's pixel bounds so the viewport never shows past an
@@ -231,8 +257,37 @@ static void load_scene_sprite_tiles(const gba_scene_def_t *scene) {
   }
 }
 
+// Depth-sorted draw order for isometric scenes.
+// Actors are sorted by screen_y ascending (lower y = farther from viewer =
+// drawn first / behind). For iso: screen_y ∝ tile_x + tile_y, so this is
+// equivalent to sorting by depth key without needing to track tile coords
+// separately from the actor's x/y fields.
+static uint8_t actor_draw_order[MAX_ACTORS];
+
+static void build_iso_draw_order(void) {
+  uint8_t count = current_scene.num_actors;
+  for (uint8_t i = 0; i < count; i++) {
+    actor_draw_order[i] = i;
+  }
+  // Simple insertion sort — MAX_ACTORS is small (16), so this is fine.
+  for (uint8_t i = 1; i < count; i++) {
+    uint8_t key = actor_draw_order[i];
+    int16_t key_sy = iso_screen_y((int16_t)actors[key].x, (int16_t)actors[key].y);
+    int8_t j = (int8_t)i - 1;
+    while (j >= 0) {
+      uint8_t prev = actor_draw_order[(uint8_t)j];
+      int16_t prev_sy = iso_screen_y((int16_t)actors[prev].x, (int16_t)actors[prev].y);
+      if (prev_sy <= key_sy) break;
+      actor_draw_order[(uint8_t)(j + 1)] = prev;
+      j--;
+    }
+    actor_draw_order[(uint8_t)(j + 1)] = key;
+  }
+}
+
 static void render_scene_actors(void) {
   uint16_t oam_index = 0;
+  bool is_iso = (current_scene.type == SCENE_TYPE_ISOMETRIC);
 
   hide_all_oam();
 
@@ -240,7 +295,17 @@ static void render_scene_actors(void) {
     return;
   }
 
-  for (uint8_t actor_index = 0; actor_index < current_scene.num_actors; actor_index++) {
+  // Build draw order: isometric needs depth sort; top-down uses natural order.
+  if (is_iso) {
+    build_iso_draw_order();
+  } else {
+    for (uint8_t i = 0; i < current_scene.num_actors; i++) {
+      actor_draw_order[i] = i;
+    }
+  }
+
+  for (uint8_t order_i = 0; order_i < current_scene.num_actors; order_i++) {
+    uint8_t actor_index = actor_draw_order[order_i];
     const actor_t *actor = &actors[actor_index];
     if (!actor->active || actor->hidden || actor->disabled) {
       continue;
@@ -254,6 +319,17 @@ static void render_scene_actors(void) {
       continue;
     }
 
+    // For isometric scenes actor->x/y are tile coords; project to screen.
+    // For top-down actor->x/y are already pixel coords.
+    int16_t base_sx, base_sy;
+    if (is_iso) {
+      base_sx = iso_screen_x((int16_t)actor->x, (int16_t)actor->y) - (int16_t)camera.x;
+      base_sy = iso_screen_y((int16_t)actor->x, (int16_t)actor->y) - (int16_t)camera.y;
+    } else {
+      base_sx = (int16_t)actor->x - (int16_t)camera.x;
+      base_sy = (int16_t)actor->y - (int16_t)camera.y;
+    }
+
     uint16_t tile_base = loaded_sprite_tile_bases[actor->sprite_index];
     for (uint8_t tile_index = 0; tile_index < sprite->metasprite_len; tile_index++) {
       if (oam_index >= MAX_OAM_ENTRIES) {
@@ -261,10 +337,8 @@ static void render_scene_actors(void) {
       }
 
       const gba_metasprite_tile_t *tile = &sprite->metasprite[tile_index];
-      int16_t screen_x =
-          (int16_t)actor->x + tile->x - (int16_t)camera.x;
-      int16_t screen_y =
-          (int16_t)actor->y + tile->y - (int16_t)camera.y;
+      int16_t screen_x = base_sx + tile->x;
+      int16_t screen_y = base_sy + tile->y;
 
       if (screen_x <= -8 || screen_x >= SCREEN_WIDTH || screen_y <= -8 ||
           screen_y >= SCREEN_HEIGHT) {
@@ -406,6 +480,9 @@ static void init_scene_state(void) {
   camera.x = 0;
   camera.y = 0;
   current_trigger_index = TRIGGER_NONE;
+  iso_tile_w = 32;
+  iso_tile_h = 16;
+  iso_origin_x = 0;
 
   for (uint8_t i = 0; i < MAX_ACTORS; i++) {
     actors[i].active = false;
@@ -450,7 +527,11 @@ void engine_update(void) {
       int16_t dy = (int16_t)other->y - (int16_t)player->y;
       if (dx < 0) dx = (int16_t)-dx;
       if (dy < 0) dy = (int16_t)-dy;
-      if (dx <= TILE_WIDTH && dy <= TILE_HEIGHT) {
+      // Isometric actors store tile coords; 1 tile proximity means adjacent.
+      // Top-down actors store pixel coords; compare against tile pixel size.
+      int16_t interact_dist = (current_scene.type == SCENE_TYPE_ISOMETRIC)
+                              ? 2 : (int16_t)TILE_WIDTH;
+      if (dx <= interact_dist && dy <= interact_dist) {
         // Check if this actor has a compiled interact script.
         if (current_scene_def != NULL &&
             current_scene_def->actors != NULL &&
@@ -471,15 +552,30 @@ void engine_update(void) {
     int16_t step = (int16_t)(player->move_speed > 0 ? player->move_speed : 1);
     player->vel_x = 0;
     player->vel_y = 0;
-    if (keys & KEY_LEFT) {
-      player->vel_x = (int16_t)(-step);
-    } else if (keys & KEY_RIGHT) {
-      player->vel_x = step;
-    }
-    if (keys & KEY_UP) {
-      player->vel_y = (int16_t)(-step);
-    } else if (keys & KEY_DOWN) {
-      player->vel_y = step;
+
+    if (current_scene.type == SCENE_TYPE_ISOMETRIC) {
+      // Isometric D-pad mapping (tile-grid units):
+      //   UP    → NE: tile_y--  → screen_x+, screen_y-
+      //   DOWN  → SW: tile_y++  → screen_x-, screen_y+
+      //   LEFT  → NW: tile_x--  → screen_x-, screen_y-
+      //   RIGHT → SE: tile_x++  → screen_x+, screen_y+
+      // vel_x/vel_y store tile delta (1 or -1); collision and position update
+      // below keep them in tile coords; projection happens at render time.
+      if (keys & KEY_UP)    { player->vel_y = (int16_t)(-step); }
+      else if (keys & KEY_DOWN)  { player->vel_y = step; }
+      if (keys & KEY_LEFT)  { player->vel_x = (int16_t)(-step); }
+      else if (keys & KEY_RIGHT) { player->vel_x = step; }
+    } else {
+      if (keys & KEY_LEFT) {
+        player->vel_x = (int16_t)(-step);
+      } else if (keys & KEY_RIGHT) {
+        player->vel_x = step;
+      }
+      if (keys & KEY_UP) {
+        player->vel_y = (int16_t)(-step);
+      } else if (keys & KEY_DOWN) {
+        player->vel_y = step;
+      }
     }
   }
 
@@ -527,22 +623,48 @@ void engine_update(void) {
       }
     }
 
-    if (actor->collision_enabled && current_scene_def != NULL &&
-        (actor->vel_x != 0 || actor->vel_y != 0)) {
-      // Collision-aware movement: slide along walls (resolve X, then Y)
-      // rather than ignoring the map or stopping dead on first contact.
-      int16_t resolved_dx = 0;
-      int16_t resolved_dy = 0;
-      collision_resolve_movement(
-          current_scene_def->collisions, current_scene.width,
-          current_scene.height, (int16_t)actor->x, (int16_t)actor->y,
-          actor->bounds_w, actor->bounds_h, actor->vel_x, actor->vel_y,
-          &resolved_dx, &resolved_dy);
-      actor->x = (uint16_t)((int16_t)actor->x + resolved_dx);
-      actor->y = (uint16_t)((int16_t)actor->y + resolved_dy);
-    } else {
-      actor->x = (uint16_t)((int16_t)actor->x + actor->vel_x);
-      actor->y = (uint16_t)((int16_t)actor->y + actor->vel_y);
+    if (actor->vel_x != 0 || actor->vel_y != 0) {
+      if (actor->collision_enabled && current_scene_def != NULL &&
+          current_scene.type != SCENE_TYPE_ISOMETRIC) {
+        // Top-down: pixel-space collision resolution.
+        int16_t resolved_dx = 0;
+        int16_t resolved_dy = 0;
+        collision_resolve_movement(
+            current_scene_def->collisions, current_scene.width,
+            current_scene.height, (int16_t)actor->x, (int16_t)actor->y,
+            actor->bounds_w, actor->bounds_h, actor->vel_x, actor->vel_y,
+            &resolved_dx, &resolved_dy);
+        actor->x = (uint16_t)((int16_t)actor->x + resolved_dx);
+        actor->y = (uint16_t)((int16_t)actor->y + resolved_dy);
+      } else if (actor->collision_enabled && current_scene_def != NULL &&
+                 current_scene.type == SCENE_TYPE_ISOMETRIC &&
+                 current_scene_def->collisions != NULL) {
+        // Isometric: actors store tile coords; check each axis independently.
+        int16_t nx = (int16_t)actor->x + actor->vel_x;
+        int16_t ny = (int16_t)actor->y + actor->vel_y;
+        // Clamp to map bounds.
+        if (nx < 0) nx = 0;
+        if (ny < 0) ny = 0;
+        if (nx >= (int16_t)current_scene.width)  nx = (int16_t)(current_scene.width  - 1);
+        if (ny >= (int16_t)current_scene.height) ny = (int16_t)(current_scene.height - 1);
+        // Check X axis.
+        uint16_t cx = (uint16_t)((int16_t)actor->x + actor->vel_x);
+        uint16_t cy = (uint16_t)actor->y;
+        if (cx < current_scene.width && cy < current_scene.height &&
+            !current_scene_def->collisions[cy * current_scene.width + cx]) {
+          actor->x = cx;
+        }
+        // Check Y axis.
+        cx = (uint16_t)actor->x;
+        cy = (uint16_t)((int16_t)actor->y + actor->vel_y);
+        if (cx < current_scene.width && cy < current_scene.height &&
+            !current_scene_def->collisions[cy * current_scene.width + cx]) {
+          actor->y = cy;
+        }
+      } else {
+        actor->x = (uint16_t)((int16_t)actor->x + actor->vel_x);
+        actor->y = (uint16_t)((int16_t)actor->y + actor->vel_y);
+      }
     }
 
     if (actor->anim_speed > 0) {
@@ -564,16 +686,29 @@ void engine_update(void) {
     const actor_t *player = &actors[0];
     int found = TRIGGER_NONE;
 
+    bool is_iso_triggers = (current_scene.type == SCENE_TYPE_ISOMETRIC);
     for (uint8_t t = 0; t < current_scene_def->trigger_count; t++) {
       const gba_trigger_def_t *trigger = &current_scene_def->triggers[t];
-      if (trigger_rects_overlap(
-              (int16_t)player->x, (int16_t)player->y, player->bounds_w,
-              player->bounds_h, (int16_t)((uint16_t)trigger->x * TILE_WIDTH),
-              (int16_t)((uint16_t)trigger->y * TILE_HEIGHT),
-              (uint16_t)trigger->w * TILE_WIDTH,
-              (uint16_t)trigger->h * TILE_HEIGHT)) {
-        found = (int)t;
-        break;
+      if (is_iso_triggers) {
+        // Isometric: both actor and trigger coords are tile indices — compare
+        // directly without scaling by TILE_WIDTH/TILE_HEIGHT.
+        if (trigger_rects_overlap(
+                (int16_t)player->x, (int16_t)player->y, 1, 1,
+                (int16_t)trigger->x, (int16_t)trigger->y,
+                (uint16_t)trigger->w, (uint16_t)trigger->h)) {
+          found = (int)t;
+          break;
+        }
+      } else {
+        if (trigger_rects_overlap(
+                (int16_t)player->x, (int16_t)player->y, player->bounds_w,
+                player->bounds_h, (int16_t)((uint16_t)trigger->x * TILE_WIDTH),
+                (int16_t)((uint16_t)trigger->y * TILE_HEIGHT),
+                (uint16_t)trigger->w * TILE_WIDTH,
+                (uint16_t)trigger->h * TILE_HEIGHT)) {
+          found = (int)t;
+          break;
+        }
       }
     }
 
@@ -588,10 +723,24 @@ void engine_update(void) {
   }
 
   if (current_scene.num_actors > 0 && actors[0].active) {
-    camera_follow(&camera, (int16_t)actors[0].x, (int16_t)actors[0].y,
-                  SCREEN_WIDTH, SCREEN_HEIGHT,
-                  (uint16_t)current_scene.width * TILE_WIDTH,
-                  (uint16_t)current_scene.height * TILE_HEIGHT);
+    int16_t cam_px, cam_py;
+    if (current_scene.type == SCENE_TYPE_ISOMETRIC) {
+      // Project tile coords to screen px for camera tracking.
+      cam_px = iso_screen_x((int16_t)actors[0].x, (int16_t)actors[0].y);
+      cam_py = iso_screen_y((int16_t)actors[0].x, (int16_t)actors[0].y);
+      // World pixel extents for an iso scene: the diamond spans
+      // scene_width * iso_tile_w wide and (scene_w + scene_h) * iso_tile_h/2 tall.
+      uint16_t world_w = (uint16_t)current_scene.width * iso_tile_w;
+      uint16_t world_h = (uint16_t)((current_scene.width + current_scene.height)
+                                    * (iso_tile_h / 2));
+      camera_follow(&camera, cam_px, cam_py, SCREEN_WIDTH, SCREEN_HEIGHT,
+                    world_w, world_h);
+    } else {
+      camera_follow(&camera, (int16_t)actors[0].x, (int16_t)actors[0].y,
+                    SCREEN_WIDTH, SCREEN_HEIGHT,
+                    (uint16_t)current_scene.width * TILE_WIDTH,
+                    (uint16_t)current_scene.height * TILE_HEIGHT);
+    }
   } else {
     camera.x = 0;
     camera.y = 0;
@@ -642,11 +791,34 @@ void load_scene(uint8_t scene_index) {
     actors[i].active = false;
   }
 
+  // For isometric scenes: load projection params from the extended struct.
+  bool is_iso = (current_scene_def->type == SCENE_TYPE_ISOMETRIC);
+  if (is_iso) {
+    const gba_iso_scene_def_t *iso_def =
+        (const gba_iso_scene_def_t *)current_scene_def;
+    iso_tile_w   = iso_def->iso_tile_w > 0 ? iso_def->iso_tile_w : 32;
+    iso_tile_h   = iso_def->iso_tile_h > 0 ? iso_def->iso_tile_h : 16;
+    iso_origin_x = (int16_t)((uint16_t)current_scene_def->width * iso_tile_w / 2);
+  } else {
+    iso_tile_w   = 32;
+    iso_tile_h   = 16;
+    iso_origin_x = 0;
+  }
+
   render_scene();
-  actor_t *player = spawn_actor(
-      current_scene_def->player_sprite_index,
-      (uint16_t)((uint16_t)GBA_GAME_DATA.start_x * TILE_WIDTH),
-      (uint16_t)((uint16_t)GBA_GAME_DATA.start_y * TILE_HEIGHT));
+
+  // Spawn player. For isometric scenes, start_x/start_y are tile coords;
+  // for top-down they are tile coords that we convert to pixel coords.
+  uint16_t player_x, player_y;
+  if (is_iso) {
+    player_x = GBA_GAME_DATA.start_x;
+    player_y = GBA_GAME_DATA.start_y;
+  } else {
+    player_x = (uint16_t)GBA_GAME_DATA.start_x * TILE_WIDTH;
+    player_y = (uint16_t)GBA_GAME_DATA.start_y * TILE_HEIGHT;
+  }
+  actor_t *player = spawn_actor(current_scene_def->player_sprite_index,
+                                player_x, player_y);
   if (player != NULL) {
     player->move_speed =
         GBA_GAME_DATA.start_move_speed > 0 ? GBA_GAME_DATA.start_move_speed : 1;
@@ -658,8 +830,11 @@ void load_scene(uint8_t scene_index) {
     for (uint8_t actor_index = 0; actor_index < current_scene_def->actor_count;
          actor_index++) {
       const gba_actor_def_t *actor_def = &current_scene_def->actors[actor_index];
-      actor_t *actor =
-          spawn_actor(actor_def->sprite_index, actor_def->x, actor_def->y);
+      // Isometric: actor x/y are tile-grid indices (compiler emits them that way).
+      // Top-down: actor x/y are already pixel coords.
+      uint16_t ax = actor_def->x;
+      uint16_t ay = actor_def->y;
+      actor_t *actor = spawn_actor(actor_def->sprite_index, ax, ay);
       if (actor == NULL) {
         break;
       }
