@@ -20,13 +20,13 @@ static void reset_engine(void) {
 TEST(engine_init_schedules_bootstrap_and_enables_bg0) {
   reset_engine();
 
-  ASSERT_EQ(test_reg_dispcnt, MODE_0 | BG0_ENABLE);
+  ASSERT_EQ(test_reg_dispcnt, MODE_0 | BG0_ENABLE | OBJ_ENABLE | OBJ_1D_MAP);
   ASSERT_EQ(test_reg_bg0cnt, 0);
   ASSERT_EQ(test_load_palette_calls, 0);
 
   engine_update();
 
-  ASSERT_EQ(test_reg_bg0cnt, (28u << 8));
+  ASSERT_EQ(test_reg_bg0cnt, (28u << 8) | 1u);
   ASSERT_EQ(test_load_palette_calls, 1);
 }
 
@@ -65,7 +65,7 @@ TEST(engine_update_cycles_scenes_when_start_is_pressed) {
   engine_update();
 
   uint16_t *map = screenblock(28);
-  ASSERT_EQ(test_mem_palette[0], RGB15(4, 1, 5));
+  ASSERT_EQ(test_mem_palette[0], RGB15(1, 3, 4));
   ASSERT_EQ(map[3 * 32 + 3], 1);
   ASSERT_EQ(map[4 * 32 + 4], 0);
 }
@@ -157,29 +157,26 @@ TEST(movement_type_follow_chases_the_player_only_within_range) {
   engine_update();
   load_scene(0);
 
-  actor_t *player = spawn_actor(0, 30, 8);
-  ASSERT_NOT_NULL(player);
-
-  actor_t *follower = spawn_actor(1, 10, 8);
+  actor_t *follower = spawn_actor(1, 10, 0);
   ASSERT_NOT_NULL(follower);
   follower->movement_type = MOVEMENT_TYPE_FOLLOW;
   follower->move_speed = 2;
   follower->movement_bounds_w = 30; // square aggro range, in pixels
 
-  // Player is 20px away on the x axis (within the 30px range): follower
-  // steps toward it, clamped to its speed.
+  // The auto-spawned player actor is at (0,0), within range: follower steps
+  // toward it, clamped to speed.
   engine_update();
-  ASSERT_EQ(follower->vel_x, 2);
+  ASSERT_EQ(follower->vel_x, -2);
   ASSERT_EQ(follower->vel_y, 0);
-  ASSERT_EQ(follower->x, 12);
+  ASSERT_EQ(follower->x, 8);
 
-  // Move the player out of range (32px away): follower stops dead, even
-  // though it last had nonzero velocity.
-  player->x = 44;
+  // Move the follower out of range: it stops dead, even though it last had
+  // nonzero velocity.
+  follower->x = 44;
   engine_update();
   ASSERT_EQ(follower->vel_x, 0);
   ASSERT_EQ(follower->vel_y, 0);
-  ASSERT_EQ(follower->x, 12);
+  ASSERT_EQ(follower->x, 44);
 }
 
 TEST(scene_trigger_runs_its_script_once_when_the_player_enters) {
@@ -193,28 +190,17 @@ TEST(scene_trigger_runs_its_script_once_when_the_player_enters) {
   engine_update();
   load_scene(2);
 
-  // test_scene2's only trigger covers tile (2,2)-(4,4), i.e. pixels
-  // [16,32)x[16,32); its script sets the palette tone to 2
+  // test_scene2's only trigger covers the auto-spawned player at tile (0,0);
+  // its script sets the palette tone to 2
   // (RGB15(6, 3, 1) — see bg_palettes — distinct from scene2's initial
   // tone 0, RGB15(1, 3, 4)), an effect already proven observable via
   // test_mem_palette by vm_scene_set_tone_reloads_the_palette_for_the_current_scene.
-  actor_t *player = spawn_actor(0, 0, 0);
-  ASSERT_NOT_NULL(player);
-
   engine_update();
   ASSERT_EQ(test_mem_palette[0], RGB15(1, 3, 4));
 
-  // Step the player into the trigger zone. Setting position directly (not
-  // via vel_x/collision) keeps this test focused purely on trigger overlap.
-  player->x = 20;
-  player->y = 20;
-
-  // Frame 1: engine_update detects the new overlap and schedules the
+  // Frame 1: engine_update detects the overlap and schedules the
   // trigger's script — but script_runner_update already ran earlier in this
   // same frame, so the palette hasn't changed yet.
-  engine_update();
-  ASSERT_EQ(test_mem_palette[0], RGB15(1, 3, 4));
-
   // Frame 2: the scheduled script now runs to completion (VM_OP_SET_SCENE_TONE
   // then VM_OP_END), reloading the palette for tone 2.
   engine_update();

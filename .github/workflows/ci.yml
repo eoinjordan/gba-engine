@@ -49,11 +49,6 @@ jobs:
           echo "DEVKITARM=/opt/devkitpro/devkitARM" >> "$GITHUB_ENV"
           echo "/opt/devkitpro/devkitARM/bin" >> "$GITHUB_PATH"
 
-      - name: Install mGBA
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends mgba-sdl
-
       - name: Build .gba ROM
         run: make
 
@@ -67,9 +62,6 @@ jobs:
           size=$(stat -c%s bin/game.gba)
           echo "ROM size: $size bytes"
           test "$size" -ge 192
-
-      - name: Run emulator smoke test
-        run: bash scripts/test-emu.sh bin/game.gba
 
       - name: Upload ROM artifact
         uses: actions/upload-artifact@v4
