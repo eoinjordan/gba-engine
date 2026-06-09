@@ -10,6 +10,8 @@ This engine started life as the runtime backend for [GBA Studio](https://github.
 pulled out into its own repo so it can be reused or embedded in other GBA
 projects independent of the studio's editor/compiler.
 
+[Join the GBA STUDIO Discord](https://discord.gg/3B3SZmdpw)
+
 **GBA Studio now consumes this repo as a git submodule**, mounted at
 `appData/engine/gbavm` (see `.gitmodules` in that repo). The studio's
 editor/compiler paths are unchanged — they still point at
