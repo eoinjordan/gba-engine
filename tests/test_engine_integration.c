@@ -7,6 +7,10 @@ static uint16_t *screenblock(unsigned block) {
   return &test_mem_vram[(block * 0x0800u) / sizeof(uint16_t)];
 }
 
+static uint16_t *charblock(unsigned block) {
+  return &test_mem_vram[(block * 0x4000u) / sizeof(uint16_t)];
+}
+
 static void reset_engine(void) {
   test_reset_environment();
   engine_init();
@@ -26,15 +30,19 @@ TEST(engine_init_schedules_bootstrap_and_enables_bg0) {
   ASSERT_EQ(test_load_palette_calls, 1);
 }
 
-TEST(load_scene_renders_expected_border_collision_and_checker_tiles) {
+TEST(load_scene_renders_compiled_tilemap_and_tileset) {
   reset_engine();
   load_scene(0);
 
   uint16_t *map = screenblock(28);
-  ASSERT_EQ(map[0], 2);
-  ASSERT_EQ(map[1 * 32 + 1], 1);
-  ASSERT_EQ(map[2 * 32 + 2], 4);
-  ASSERT_EQ(map[1 * 32 + 3], 3);
+  uint16_t *tiles = charblock(0);
+  ASSERT_EQ(tiles[16], 0x1111);
+  ASSERT_EQ(tiles[32], 0x2222);
+  ASSERT_EQ(tiles[48], 0x3333);
+  ASSERT_EQ(map[0], 1);
+  ASSERT_EQ(map[1], 2);
+  ASSERT_EQ(map[2], 3);
+  ASSERT_EQ(map[2 * 32 + 2], 1);
   ASSERT_EQ(map[8 * 32 + 8], 0);
 }
 
@@ -58,7 +66,7 @@ TEST(engine_update_cycles_scenes_when_start_is_pressed) {
 
   uint16_t *map = screenblock(28);
   ASSERT_EQ(test_mem_palette[0], RGB15(4, 1, 5));
-  ASSERT_EQ(map[3 * 32 + 3], 2);
+  ASSERT_EQ(map[3 * 32 + 3], 1);
   ASSERT_EQ(map[4 * 32 + 4], 0);
 }
 
@@ -215,7 +223,7 @@ TEST(scene_trigger_runs_its_script_once_when_the_player_enters) {
 
 int main(void) {
   RUN_TEST(engine_init_schedules_bootstrap_and_enables_bg0);
-  RUN_TEST(load_scene_renders_expected_border_collision_and_checker_tiles);
+  RUN_TEST(load_scene_renders_compiled_tilemap_and_tileset);
   RUN_TEST(vm_scene_set_tone_reloads_the_palette_for_the_current_scene);
   RUN_TEST(engine_update_cycles_scenes_when_start_is_pressed);
   RUN_TEST(active_actors_move_and_destroyed_slots_are_reused);

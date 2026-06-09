@@ -23,6 +23,9 @@ typedef struct gba_scene_def_t {
   uint8_t actor_count;
   uint8_t trigger_count;
   uint8_t palette_tone;
+  uint16_t tileset_len;
+  const uint8_t *tileset;
+  const uint8_t *tilemap;
   const uint8_t *collisions;
   const uint8_t *init_script;
   const gba_trigger_def_t *triggers;

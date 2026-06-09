@@ -25,6 +25,8 @@ static const uint8_t fallback_scene_script[] = {
     VM_OP_END,
 };
 static const uint8_t fallback_collisions[MAP_WIDTH * MAP_HEIGHT] = {0};
+static const uint8_t fallback_tileset[32] = {0};
+static const uint8_t fallback_tilemap[MAP_WIDTH * MAP_HEIGHT] = {0};
 static const gba_scene_def_t fallback_scene = {
     MAP_WIDTH,
     MAP_HEIGHT,
@@ -32,6 +34,9 @@ static const gba_scene_def_t fallback_scene = {
     0,
     0,
     0,
+    sizeof(fallback_tileset),
+    fallback_tileset,
+    fallback_tilemap,
     fallback_collisions,
     fallback_scene_script,
     NULL,
@@ -163,25 +168,12 @@ static void set_map_entry(uint16_t x, uint16_t y, uint16_t tile_index) {
   SCREENBLOCK(MAP_SCREENBLOCK)[y * 32 + x] = tile_index;
 }
 
-static void render_scene(void) {
-  const gba_scene_def_t *scene = current_scene_def;
-  // current_palette_tone is the single source of truth for which palette
-  // bank is active: load_scene seeds it from the scene's compiled default
-  // (scene->palette_tone) when entering a scene, and vm_scene_set_tone
-  // overrides it at runtime (e.g. a script darkening a room) — render_scene
-  // must respect that override rather than reverting to the compiled
-  // default on every redraw.
-  uint8_t tone = current_palette_tone;
-  load_palette(bg_palettes[tone & 0x03], 0, 8);
-
+static void render_placeholder_scene(const gba_scene_def_t *scene) {
   load_solid_tile(TILE_BACKDROP, 0);
   load_solid_tile(TILE_FILL, 1);
   load_solid_tile(TILE_BORDER, 2);
   load_checker_tile(TILE_CHECKER, 1, 3);
   load_checker_tile(TILE_SOLID, 2, 4);
-
-  // BG0: charblock 0, screenblock 28, 4bpp, 32x32, priority 0.
-  REG_BG0CNT = (TILE_CHARBLOCK << 2) | (MAP_SCREENBLOCK << 8);
 
   for (uint16_t y = 0; y < 32; y++) {
     for (uint16_t x = 0; x < 32; x++) {
@@ -208,6 +200,56 @@ static void render_scene(void) {
       set_map_entry(x, y, tile);
     }
   }
+}
+
+static void render_compiled_background(const gba_scene_def_t *scene) {
+  volatile uint16_t *tiles_vram = CHARBLOCK(TILE_CHARBLOCK);
+  volatile uint8_t *tiles_vram_bytes = (volatile uint8_t *)tiles_vram;
+  uint16_t width = scene->width < 32 ? scene->width : 32;
+  uint16_t height = scene->height < 32 ? scene->height : 32;
+
+  for (uint16_t index = 0; index < 0x4000u / sizeof(uint16_t); index++) {
+    tiles_vram[index] = 0;
+  }
+
+  if (scene->tileset != NULL && scene->tileset_len > 0) {
+    for (uint16_t index = 0; index < scene->tileset_len; index++) {
+      tiles_vram_bytes[index] = scene->tileset[index];
+    }
+  }
+
+  for (uint16_t y = 0; y < 32; y++) {
+    for (uint16_t x = 0; x < 32; x++) {
+      uint16_t tile = TILE_BACKDROP;
+      if (scene->tilemap != NULL && x < width && y < height) {
+        tile = scene->tilemap[y * scene->width + x];
+      }
+      set_map_entry(x, y, tile);
+    }
+  }
+}
+
+static void render_scene(void) {
+  const gba_scene_def_t *scene = current_scene_def;
+  // current_palette_tone is the single source of truth for which palette
+  // bank is active: load_scene seeds it from the scene's compiled default
+  // (scene->palette_tone) when entering a scene, and vm_scene_set_tone
+  // overrides it at runtime (e.g. a script darkening a room) — render_scene
+  // must respect that override rather than reverting to the compiled
+  // default on every redraw.
+  uint8_t tone = current_palette_tone;
+  load_palette(bg_palettes[tone & 0x03], 0, 8);
+
+  // BG0: charblock 0, screenblock 28, 4bpp, 32x32, priority 0.
+  REG_BG0CNT = (TILE_CHARBLOCK << 2) | (MAP_SCREENBLOCK << 8);
+
+  if (scene != NULL && scene->tileset != NULL && scene->tilemap != NULL &&
+      scene->tileset_len > 0) {
+    render_compiled_background(scene);
+    return;
+  }
+
+  render_placeholder_scene(scene);
 }
 
 static void init_scene_state(void) {
