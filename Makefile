@@ -78,7 +78,9 @@ INTEGRATION_TEST_SOURCES := tests/test_engine_integration.c \
 	$(SRCDIR)/camera.c \
 	$(SRCDIR)/collision.c \
 	$(SRCDIR)/text.c \
-	$(SRCDIR)/savegame.c
+	$(SRCDIR)/savegame.c \
+	$(SRCDIR)/movement.c \
+	$(SRCDIR)/trigger.c
 
 test-unit: | $(BINDIR)
 	$(HOST_CC) $(HOST_CFLAGS) $(TEST_SOURCES) -o $(TEST_BIN)
