@@ -221,7 +221,7 @@ static void map_set(uint16_t col, uint16_t row, uint16_t tile_index) {
   screenblock30()[row * 32u + col] = TEXT_MAP_ENTRY(tile_index);
 }
 
-static void map_set_transparent(uint16_t col, uint16_t row) {
+__attribute__((unused)) static void map_set_transparent(uint16_t col, uint16_t row) {
   screenblock30()[row * 32u + col] = 0x0000;
 }
 

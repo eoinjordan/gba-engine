@@ -22,38 +22,23 @@ static const uint8_t fallback_bootstrap_script[] = {
     VM_OP_END,
 };
 static const uint8_t fallback_collisions[MAP_WIDTH * MAP_HEIGHT] = {0};
-static const uint8_t fallback_tileset[32] = {0};
-static const uint8_t fallback_tilemap[MAP_WIDTH * MAP_HEIGHT] = {0};
+// Tileset/tilemap intentionally omitted so render_scene() uses the colourful
+// placeholder renderer rather than render_compiled_background() on null data.
 static const gba_scene_def_t fallback_scene = {
-    MAP_WIDTH,
-    MAP_HEIGHT,
-    0,
-    0,
-    0,
-    0,
-    sizeof(fallback_tileset),
-    fallback_tileset,
-    fallback_tilemap,
-    NULL,
-    NULL,
-    NULL,
-    fallback_collisions,
-    NULL,
-    0,
-    NULL,
-    NULL,
+    .width      = MAP_WIDTH,
+    .height     = MAP_HEIGHT,
+    .collisions = fallback_collisions,
 };
 static const gba_scene_def_t *const fallback_scenes[] = {&fallback_scene};
 static const gba_game_data_t fallback_game_data = {
-    1,
-    0,
-    MAP_WIDTH / 2,
-    MAP_HEIGHT / 2,
-    0,
-    1,
-    15,
-    fallback_scenes,
-    fallback_bootstrap_script,
+    .scene_count       = 1,
+    .start_scene_index = 0,
+    .start_x           = MAP_WIDTH / 2,
+    .start_y           = MAP_HEIGHT / 2,
+    .start_move_speed  = 1,
+    .start_anim_speed  = 15,
+    .scenes            = fallback_scenes,
+    .bootstrap_script  = fallback_bootstrap_script,
 };
 #endif
 
