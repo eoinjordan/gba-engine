@@ -18,6 +18,7 @@
 // were valid data.
 // ---------------------------------------------------------------------------
 
+#include <stddef.h>
 #include "vm.h"
 #include <stdbool.h>
 #include <stdint.h>

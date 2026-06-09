@@ -5,8 +5,8 @@ static uint16_t keys_previous = 0;
 
 void gba_init(void) {
     // Initialize GBA system
-    // Set up display mode 0 with BG0 enabled
-    REG_DISPCNT = MODE_0 | BG0_ENABLE;
+    // Set up display mode 0 with BG0 + OBJ enabled
+    REG_DISPCNT = MODE_0 | BG0_ENABLE | OBJ_ENABLE | OBJ_1D_MAP;
     
     // Clear VRAM
     for (int i = 0; i < 0x18000/2; i++) {
@@ -14,8 +14,13 @@ void gba_init(void) {
     }
     
     // Clear palette
-    for (int i = 0; i < 256; i++) {
+    for (int i = 0; i < 512; i++) {
         MEM_PALETTE[i] = 0;
+    }
+
+    // Clear OAM
+    for (int i = 0; i < 128 * 4; i++) {
+        MEM_OAM[i] = 0;
     }
 }
 

@@ -7,6 +7,8 @@
 #ifndef GBA_ENGINE_TEST_STUBS_H
 #define GBA_ENGINE_TEST_STUBS_H
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 extern int stub_scene_load_calls;
@@ -14,6 +16,10 @@ extern uint8_t stub_last_scene_index;
 
 extern int stub_scene_tone_calls;
 extern uint8_t stub_last_scene_tone;
+
+extern int stub_textbox_open_calls;
+extern const char *stub_last_textbox_text;
+extern bool stub_textbox_dismiss_next;
 
 void stub_reset(void);
 

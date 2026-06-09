@@ -113,3 +113,11 @@ void dma_fill(uint32_t value, void *dest, uint32_t count) {
     words[index] = value;
   }
 }
+
+// Textbox stubs — the real textbox.c writes font tiles to VRAM and controls
+// BG1; for integration tests we stub them out to avoid linking hardware-facing
+// code that doesn't compile under the host toolchain.
+void textbox_init(void) {}
+void textbox_open(const char *text) { (void)text; }
+bool textbox_update(void) { return true; }
+void textbox_close(void) {}

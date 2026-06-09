@@ -51,6 +51,7 @@
 #define BG2_ENABLE     0x0400
 #define BG3_ENABLE     0x0800
 #define OBJ_ENABLE     0x1000
+#define OBJ_1D_MAP     0x0040
 
 // Key definitions
 #define KEY_A          0x0001

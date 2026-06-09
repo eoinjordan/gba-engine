@@ -70,6 +70,14 @@ typedef uint16_t UINT16;
 #define VM_OP_IF_VAR_GT_CONST 0x0D     // var, value, offset (branch if var >  value)
 #define VM_OP_IF_VAR_LT_CONST 0x0E     // var, value, offset (branch if var <  value)
 
+// Show a dialogue textbox. The opcode is followed by a NUL-terminated UTF-8
+// string embedded inline in the bytecode stream. The script context suspends
+// until textbox_update() returns true (player pressed A). Supports {N}
+// variable placeholders (see text.h).
+//
+// Encoding: VM_OP_SHOW_TEXT, 'H','e','l','l','o',0x00, [next opcode...]
+#define VM_OP_SHOW_TEXT 0x0F
+
 extern INT16 vm_variables[VM_VARIABLE_COUNT];
 
 // Reseed the script RNG (VM_OP_RANDOM). The engine should call this from

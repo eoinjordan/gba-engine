@@ -435,6 +435,66 @@ TEST(terminate_reports_failure_for_an_unknown_id) {
 }
 
 // ---------------------------------------------------------------------------
+// VM_OP_SHOW_TEXT — textbox dispatch and blocking
+// ---------------------------------------------------------------------------
+
+TEST(show_text_opcode_calls_textbox_open_with_inline_string) {
+  reset_vm();
+
+  // Script: SHOW_TEXT "Hi\0" END
+  static const uint8_t script[] = {
+      VM_OP_SHOW_TEXT, 'H', 'i', 0x00,
+      VM_OP_END,
+  };
+  script_execute(0, (uint8_t *)script, NULL, 0);
+
+  // First update: textbox_open is called and the context blocks.
+  stub_textbox_dismiss_next = false;
+  ASSERT_EQ(script_runner_update(), RUNNER_BUSY);
+  ASSERT_EQ(stub_textbox_open_calls, 1);
+}
+
+TEST(show_text_opcode_blocks_until_textbox_update_returns_true) {
+  reset_vm();
+
+  static const uint8_t script[] = {
+      VM_OP_SHOW_TEXT, 'O', 'K', 0x00,
+      VM_OP_SET_SCENE_TONE, 3,
+      VM_OP_END,
+  };
+  script_execute(0, (uint8_t *)script, NULL, 0);
+
+  // Blocked — textbox still showing.
+  stub_textbox_dismiss_next = false;
+  ASSERT_EQ(script_runner_update(), RUNNER_BUSY);
+  ASSERT_EQ(stub_scene_tone_calls, 0);
+
+  // Player presses A — textbox dismisses.
+  stub_textbox_dismiss_next = true;
+  ASSERT_EQ(script_runner_update(), RUNNER_DONE);
+  ASSERT_EQ(stub_scene_tone_calls, 1);
+  ASSERT_EQ(stub_last_scene_tone, 3);
+}
+
+TEST(show_text_opcode_advances_pc_past_the_inline_string) {
+  reset_vm();
+
+  // Two SHOW_TEXT opcodes back-to-back — confirms PC advances correctly past
+  // each string so the second one is also dispatched (not corrupt data).
+  static const uint8_t script[] = {
+      VM_OP_SHOW_TEXT, 'A', 0x00,
+      VM_OP_SHOW_TEXT, 'B', 0x00,
+      VM_OP_END,
+  };
+  script_execute(0, (uint8_t *)script, NULL, 0);
+
+  stub_textbox_dismiss_next = true;
+  script_runner_update(); // dispatches first SHOW_TEXT, dismiss immediately
+  script_runner_update(); // dispatches second SHOW_TEXT, dismiss immediately
+  ASSERT_EQ(stub_textbox_open_calls, 2);
+}
+
+// ---------------------------------------------------------------------------
 // Camera follow/clamp math (src/camera.c)
 //
 // A 240x160 viewport (the GBA screen) is used throughout, matching

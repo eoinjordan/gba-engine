@@ -67,7 +67,7 @@ static int16_t resolve_axis(const uint8_t *collisions,
                              uint8_t map_width_tiles, uint8_t map_height_tiles,
                              int16_t fixed_left, int16_t fixed_top,
                              uint16_t width_px, uint16_t height_px,
-                             bool moving_x, int16_t from, int16_t delta) {
+                             bool moving_x, int16_t delta) {
   if (delta == 0) {
     return 0;
   }
@@ -108,13 +108,13 @@ void collision_resolve_movement(const uint8_t *collisions,
   // Resolve X first from the original position...
   int16_t achieved_dx =
       resolve_axis(collisions, map_width_tiles, map_height_tiles, left_px,
-                   top_px, width_px, height_px, true, left_px, dx);
+                   top_px, width_px, height_px, true, dx);
 
   // ...then Y from the X-resolved position, so sliding along a wall works.
   int16_t achieved_dy = resolve_axis(
       collisions, map_width_tiles, map_height_tiles,
       (int16_t)(left_px + achieved_dx), top_px, width_px, height_px, false,
-      top_px, dy);
+      dy);
 
   *out_dx = achieved_dx;
   *out_dy = achieved_dy;

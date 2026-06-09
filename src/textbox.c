@@ -1,0 +1,374 @@
+#include "textbox.h"
+#include "gba_system.h"
+#include "text.h"
+#include <stddef.h>
+#include <string.h>
+
+// ---------------------------------------------------------------------------
+// VRAM layout for the text layer
+//
+//  BG1 uses charblock 1 (0x06004000) for glyphs and screenblock 30
+//  (0x0600F000) for the 32×32 tile map. BG0 (game world) stays in
+//  charblock 0 / screenblock 28. Because equal-priority BGs are ordered by
+//  index (lower = higher priority) BG0 would win, so BG0 is set to priority 1
+//  and BG1 to priority 0 in gba_system.c — this makes BG1 render on top
+//  without affecting how the game world looks when the textbox is hidden.
+// ---------------------------------------------------------------------------
+#define TEXT_CHARBLOCK   1
+#define TEXT_SCREENBLOCK 30
+
+// Tile 0 in charblock 1 = all-zero = transparent (unused, map filled with 0).
+// Tiles 1..96 = font glyphs for ASCII 32 (space) .. 127 (DEL).
+// Tile 97  = dark background fill (all pixels palette color 2).
+// Tile 98  = medium border fill   (all pixels palette color 3).
+// Tile 99  = cursor indicator      (a small down-arrow in color 1).
+#define TILE_IDX_TRANSPARENT 0
+#define TILE_IDX_FONT_BASE   1   // font[ch - 32] = tile (1..96)
+#define TILE_IDX_BOX_BG      97
+#define TILE_IDX_BOX_BORDER  98
+#define TILE_IDX_CURSOR      99
+
+// Textbox occupies the bottom 4 tile rows (rows 16–19 of a 30×20 screen).
+#define BOX_ROW_TOP    16
+#define BOX_ROW_BOT    19
+#define BOX_COL_LEFT   0
+#define BOX_COL_RIGHT  29
+// Inner text area: rows 17–18, cols 1–28.
+#define TEXT_ROW_START 17
+#define TEXT_COL_START 1
+// (TEXTBOX_CHARS_W and TEXTBOX_LINES come from textbox.h)
+
+// Palette bank 15 is reserved for the textbox.
+#define TEXT_PALETTE_BANK 15
+#define PAL_TRANSPARENT   RGB15( 0,  0,  0)   // transparent (index 0 in any BG bank)
+#define PAL_TEXT          RGB15(31, 31, 31)   // white glyphs
+#define PAL_BOX_BG        RGB15( 2,  4,  6)   // very dark blue-gray box fill
+#define PAL_BORDER        RGB15(10, 14, 18)   // medium blue-gray border
+
+// Helpers that reach into VRAM without pulling in the full address macros from
+// gba_system.c (which are file-scoped there). We build the addresses manually
+// from MEM_VRAM — both charblock and screenblock data live inside VRAM.
+static volatile uint8_t *charblock1_bytes(void) {
+  return (volatile uint8_t *)((uintptr_t)MEM_VRAM + TEXT_CHARBLOCK * 0x4000u);
+}
+
+static volatile uint16_t *screenblock30(void) {
+  return (volatile uint16_t *)((uintptr_t)MEM_VRAM +
+                               TEXT_SCREENBLOCK * 0x0800u);
+}
+
+// ---------------------------------------------------------------------------
+// Embedded 8×8 bitmap font — standard VGA/PC 8×8 glyphs for ASCII 32..127.
+// Each entry is 8 bytes: one byte per row, MSB = leftmost pixel, 1 = set.
+// ---------------------------------------------------------------------------
+static const uint8_t font_bitmap[96][8] = {
+  { 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00 }, // ' ' 0x20
+  { 0x18,0x18,0x18,0x18,0x00,0x00,0x18,0x00 }, // '!'
+  { 0x66,0x66,0x00,0x00,0x00,0x00,0x00,0x00 }, // '"'
+  { 0x36,0x36,0x7F,0x36,0x7F,0x36,0x36,0x00 }, // '#'
+  { 0x0C,0x3E,0x6C,0x3E,0x1B,0x3E,0x0C,0x00 }, // '$'
+  { 0x60,0x66,0x0C,0x18,0x30,0x66,0x06,0x00 }, // '%'
+  { 0x38,0x6C,0x6C,0x38,0x6D,0x66,0x3B,0x00 }, // '&'
+  { 0x06,0x06,0x0C,0x00,0x00,0x00,0x00,0x00 }, // '\''
+  { 0x0E,0x18,0x30,0x30,0x30,0x18,0x0E,0x00 }, // '('
+  { 0x70,0x18,0x0C,0x0C,0x0C,0x18,0x70,0x00 }, // ')'
+  { 0x00,0x66,0x3C,0xFF,0x3C,0x66,0x00,0x00 }, // '*'
+  { 0x00,0x18,0x18,0x7E,0x18,0x18,0x00,0x00 }, // '+'
+  { 0x00,0x00,0x00,0x00,0x18,0x18,0x30,0x00 }, // ','
+  { 0x00,0x00,0x00,0x7E,0x00,0x00,0x00,0x00 }, // '-'
+  { 0x00,0x00,0x00,0x00,0x00,0x18,0x18,0x00 }, // '.'
+  { 0x01,0x03,0x06,0x0C,0x18,0x30,0x60,0x00 }, // '/'
+  { 0x3C,0x66,0x6E,0x76,0x66,0x66,0x3C,0x00 }, // '0'
+  { 0x18,0x38,0x18,0x18,0x18,0x18,0x7E,0x00 }, // '1'
+  { 0x3C,0x66,0x06,0x1C,0x30,0x60,0x7E,0x00 }, // '2'
+  { 0x3C,0x66,0x06,0x1C,0x06,0x66,0x3C,0x00 }, // '3'
+  { 0x0E,0x1E,0x36,0x66,0x7F,0x06,0x06,0x00 }, // '4'
+  { 0x7E,0x60,0x7C,0x06,0x06,0x66,0x3C,0x00 }, // '5'
+  { 0x1C,0x30,0x60,0x7C,0x66,0x66,0x3C,0x00 }, // '6'
+  { 0x7E,0x66,0x0C,0x18,0x18,0x18,0x18,0x00 }, // '7'
+  { 0x3C,0x66,0x66,0x3C,0x66,0x66,0x3C,0x00 }, // '8'
+  { 0x3C,0x66,0x66,0x3E,0x06,0x0C,0x38,0x00 }, // '9'
+  { 0x00,0x18,0x18,0x00,0x18,0x18,0x00,0x00 }, // ':'
+  { 0x00,0x18,0x18,0x00,0x18,0x18,0x30,0x00 }, // ';'
+  { 0x06,0x0C,0x18,0x30,0x18,0x0C,0x06,0x00 }, // '<'
+  { 0x00,0x00,0x7E,0x00,0x7E,0x00,0x00,0x00 }, // '='
+  { 0x60,0x30,0x18,0x0C,0x18,0x30,0x60,0x00 }, // '>'
+  { 0x3C,0x66,0x06,0x0C,0x18,0x00,0x18,0x00 }, // '?'
+  { 0x3E,0x63,0x6F,0x69,0x6F,0x60,0x3E,0x00 }, // '@'
+  { 0x18,0x3C,0x66,0x7E,0x66,0x66,0x66,0x00 }, // 'A'
+  { 0x7C,0x66,0x66,0x7C,0x66,0x66,0x7C,0x00 }, // 'B'
+  { 0x3C,0x66,0x60,0x60,0x60,0x66,0x3C,0x00 }, // 'C'
+  { 0x78,0x6C,0x66,0x66,0x66,0x6C,0x78,0x00 }, // 'D'
+  { 0x7E,0x60,0x60,0x7C,0x60,0x60,0x7E,0x00 }, // 'E'
+  { 0x7E,0x60,0x60,0x7C,0x60,0x60,0x60,0x00 }, // 'F'
+  { 0x3C,0x66,0x60,0x6E,0x66,0x66,0x3C,0x00 }, // 'G'
+  { 0x66,0x66,0x66,0x7E,0x66,0x66,0x66,0x00 }, // 'H'
+  { 0x3C,0x18,0x18,0x18,0x18,0x18,0x3C,0x00 }, // 'I'
+  { 0x1E,0x0C,0x0C,0x0C,0x0C,0x6C,0x38,0x00 }, // 'J'
+  { 0x66,0x6C,0x78,0x70,0x78,0x6C,0x66,0x00 }, // 'K'
+  { 0x60,0x60,0x60,0x60,0x60,0x60,0x7E,0x00 }, // 'L'
+  { 0x63,0x77,0x7F,0x6B,0x63,0x63,0x63,0x00 }, // 'M'
+  { 0x66,0x76,0x7E,0x6E,0x66,0x66,0x66,0x00 }, // 'N'
+  { 0x3C,0x66,0x66,0x66,0x66,0x66,0x3C,0x00 }, // 'O'
+  { 0x7C,0x66,0x66,0x7C,0x60,0x60,0x60,0x00 }, // 'P'
+  { 0x3C,0x66,0x66,0x66,0x6E,0x3C,0x0E,0x00 }, // 'Q'
+  { 0x7C,0x66,0x66,0x7C,0x78,0x6C,0x66,0x00 }, // 'R'
+  { 0x3C,0x66,0x60,0x3C,0x06,0x66,0x3C,0x00 }, // 'S'
+  { 0x7E,0x18,0x18,0x18,0x18,0x18,0x18,0x00 }, // 'T'
+  { 0x66,0x66,0x66,0x66,0x66,0x66,0x3C,0x00 }, // 'U'
+  { 0x66,0x66,0x66,0x66,0x66,0x3C,0x18,0x00 }, // 'V'
+  { 0x63,0x63,0x63,0x6B,0x7F,0x77,0x63,0x00 }, // 'W'
+  { 0x66,0x66,0x3C,0x18,0x3C,0x66,0x66,0x00 }, // 'X'
+  { 0x66,0x66,0x66,0x3C,0x18,0x18,0x18,0x00 }, // 'Y'
+  { 0x7E,0x06,0x0C,0x18,0x30,0x60,0x7E,0x00 }, // 'Z'
+  { 0x3C,0x30,0x30,0x30,0x30,0x30,0x3C,0x00 }, // '['
+  { 0x60,0x30,0x18,0x0C,0x06,0x03,0x01,0x00 }, // '\\'
+  { 0x3C,0x0C,0x0C,0x0C,0x0C,0x0C,0x3C,0x00 }, // ']'
+  { 0x18,0x3C,0x66,0x00,0x00,0x00,0x00,0x00 }, // '^'
+  { 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xFF }, // '_'
+  { 0x30,0x18,0x0C,0x00,0x00,0x00,0x00,0x00 }, // '`'
+  { 0x00,0x00,0x3C,0x06,0x3E,0x66,0x3E,0x00 }, // 'a'
+  { 0x60,0x60,0x7C,0x66,0x66,0x66,0x7C,0x00 }, // 'b'
+  { 0x00,0x00,0x3C,0x66,0x60,0x66,0x3C,0x00 }, // 'c'
+  { 0x06,0x06,0x3E,0x66,0x66,0x66,0x3E,0x00 }, // 'd'
+  { 0x00,0x00,0x3C,0x66,0x7E,0x60,0x3C,0x00 }, // 'e'
+  { 0x0E,0x18,0x18,0x7C,0x18,0x18,0x18,0x00 }, // 'f'
+  { 0x00,0x00,0x3E,0x66,0x66,0x3E,0x06,0x3C }, // 'g'
+  { 0x60,0x60,0x7C,0x66,0x66,0x66,0x66,0x00 }, // 'h'
+  { 0x18,0x00,0x38,0x18,0x18,0x18,0x3C,0x00 }, // 'i'
+  { 0x0C,0x00,0x0C,0x0C,0x0C,0x0C,0x6C,0x38 }, // 'j'
+  { 0x60,0x60,0x66,0x6C,0x78,0x6C,0x66,0x00 }, // 'k'
+  { 0x38,0x18,0x18,0x18,0x18,0x18,0x3C,0x00 }, // 'l'
+  { 0x00,0x00,0x66,0x7F,0x7F,0x6B,0x63,0x00 }, // 'm'
+  { 0x00,0x00,0x7C,0x66,0x66,0x66,0x66,0x00 }, // 'n'
+  { 0x00,0x00,0x3C,0x66,0x66,0x66,0x3C,0x00 }, // 'o'
+  { 0x00,0x00,0x7C,0x66,0x66,0x7C,0x60,0x60 }, // 'p'
+  { 0x00,0x00,0x3E,0x66,0x66,0x3E,0x06,0x06 }, // 'q'
+  { 0x00,0x00,0x7C,0x66,0x60,0x60,0x60,0x00 }, // 'r'
+  { 0x00,0x00,0x3E,0x60,0x3C,0x06,0x7C,0x00 }, // 's'
+  { 0x18,0x18,0x7E,0x18,0x18,0x18,0x0E,0x00 }, // 't'
+  { 0x00,0x00,0x66,0x66,0x66,0x66,0x3E,0x00 }, // 'u'
+  { 0x00,0x00,0x66,0x66,0x66,0x3C,0x18,0x00 }, // 'v'
+  { 0x00,0x00,0x63,0x6B,0x7F,0x3E,0x36,0x00 }, // 'w'
+  { 0x00,0x00,0x66,0x3C,0x18,0x3C,0x66,0x00 }, // 'x'
+  { 0x00,0x00,0x66,0x66,0x66,0x3E,0x06,0x3C }, // 'y'
+  { 0x00,0x00,0x7E,0x0C,0x18,0x30,0x7E,0x00 }, // 'z'
+  { 0x0E,0x18,0x18,0x70,0x18,0x18,0x0E,0x00 }, // '{'
+  { 0x18,0x18,0x18,0x00,0x18,0x18,0x18,0x00 }, // '|'
+  { 0x70,0x18,0x18,0x0E,0x18,0x18,0x70,0x00 }, // '}'
+  { 0x3B,0x6E,0x00,0x00,0x00,0x00,0x00,0x00 }, // '~'
+  { 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00 }, // DEL (blank)
+};
+
+// Cursor glyph: a small down-arrow (▼) indicating "press A to continue".
+static const uint8_t cursor_bitmap[8] = {
+  0x00, 0x00, 0xFF, 0x7E, 0x3C, 0x18, 0x00, 0x00,
+};
+
+// ---------------------------------------------------------------------------
+// Convert a 1bpp glyph row byte into two GBA 4bpp words (4 pixels each).
+// GBA 4bpp: lower nibble = left pixel, upper nibble = right pixel.
+// Pixel value 1 maps to palette color 1 (text); 0 maps to 0 (transparent).
+// ---------------------------------------------------------------------------
+static void glyph_row_to_words(uint8_t row, uint16_t *lo, uint16_t *hi) {
+  uint16_t a = 0, b = 0;
+  for (int px = 0; px < 4; px++) {
+    uint8_t bit = (row >> (7 - px)) & 1;
+    a |= (uint16_t)(bit << (px * 4));
+  }
+  for (int px = 0; px < 4; px++) {
+    uint8_t bit = (row >> (3 - px)) & 1;
+    b |= (uint16_t)(bit << (px * 4));
+  }
+  *lo = a;
+  *hi = b;
+}
+
+// Write one 8×8 glyph (1bpp, 8 rows) as a 4bpp GBA tile at tile_index in
+// charblock 1. One tile = 16 uint16 words (8 rows × 2 words per row).
+static void write_glyph_tile(uint16_t tile_index, const uint8_t bitmap[8]) {
+  volatile uint8_t *base = charblock1_bytes();
+  volatile uint16_t *tile = (volatile uint16_t *)(base + tile_index * 32u);
+  for (int row = 0; row < 8; row++) {
+    uint16_t lo, hi;
+    glyph_row_to_words(bitmap[row], &lo, &hi);
+    tile[row * 2 + 0] = lo;
+    tile[row * 2 + 1] = hi;
+  }
+}
+
+// Write a solid tile where every pixel uses palette color `pal_idx`.
+static void write_solid_tile(uint16_t tile_index, uint8_t pal_idx) {
+  volatile uint8_t *base = charblock1_bytes();
+  volatile uint16_t *tile = (volatile uint16_t *)(base + tile_index * 32u);
+  uint16_t word = (uint16_t)((pal_idx << 4) | pal_idx);
+  word |= (uint16_t)(word << 8);
+  for (int i = 0; i < 16; i++) {
+    tile[i] = word;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Map helpers
+// ---------------------------------------------------------------------------
+
+// Each BG map entry: bits[9:0] = tile index, bits[15:12] = palette bank.
+// We use palette bank 15 for all textbox tiles.
+#define TEXT_MAP_ENTRY(tile) ((uint16_t)(((uint16_t)(TEXT_PALETTE_BANK) << 12) | (uint16_t)(tile)))
+
+static void map_set(uint16_t col, uint16_t row, uint16_t tile_index) {
+  // The screenblock is 32 entries wide regardless of visible area.
+  screenblock30()[row * 32u + col] = TEXT_MAP_ENTRY(tile_index);
+}
+
+static void map_set_transparent(uint16_t col, uint16_t row) {
+  screenblock30()[row * 32u + col] = 0x0000;
+}
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+
+static bool textbox_open_flag = false;
+
+static char textbox_text_buf[256];
+
+// ---------------------------------------------------------------------------
+// textbox_init — one-time hardware setup
+// ---------------------------------------------------------------------------
+
+void textbox_init(void) {
+  // Palette bank 15: text layer colours.
+  volatile uint16_t *pal = MEM_PALETTE + TEXT_PALETTE_BANK * 16;
+  pal[0]  = PAL_TRANSPARENT;
+  pal[1]  = PAL_TEXT;
+  pal[2]  = PAL_BOX_BG;
+  pal[3]  = PAL_BORDER;
+
+  // Load transparent tile 0 (all zeros already from gba_init VRAM clear, but
+  // be explicit so the order of init calls doesn't matter).
+  write_solid_tile(TILE_IDX_TRANSPARENT, 0);
+
+  // Load font glyphs (tiles 1..96).
+  for (uint16_t ch = 0; ch < 96; ch++) {
+    write_glyph_tile(TILE_IDX_FONT_BASE + ch, font_bitmap[ch]);
+  }
+
+  // Box background and border solid tiles.
+  write_solid_tile(TILE_IDX_BOX_BG,     2);
+  write_solid_tile(TILE_IDX_BOX_BORDER, 3);
+
+  // Cursor tile.
+  write_glyph_tile(TILE_IDX_CURSOR, cursor_bitmap);
+
+  // Clear the entire screenblock to transparent (shown through before the
+  // textbox opens, and ensures rows above the box never show junk).
+  volatile uint16_t *sb = screenblock30();
+  for (uint16_t i = 0; i < 32u * 32u; i++) {
+    sb[i] = 0x0000;
+  }
+
+  // BG1 control: charblock 1, screenblock 30, 4bpp, 32×32 tiles, priority 0.
+  // BG0 must be set to priority 1 in gba_system.c for BG1 to appear on top.
+  REG_BG1CNT = (uint16_t)((TEXT_CHARBLOCK << 2) | (TEXT_SCREENBLOCK << 8));
+}
+
+// ---------------------------------------------------------------------------
+// textbox_open
+// ---------------------------------------------------------------------------
+
+void textbox_open(const char *text) {
+  if (text == NULL) {
+    text = "";
+  }
+
+  // Substitute {N} variable placeholders, then word-wrap to box width.
+  char formatted[256];
+  text_format_variables(text, formatted, sizeof(formatted));
+  text_word_wrap(formatted, TEXTBOX_CHARS_W, textbox_text_buf,
+                 sizeof(textbox_text_buf));
+
+  // --- Draw the box frame ---
+  // Top border row.
+  for (uint16_t col = BOX_COL_LEFT; col <= (uint16_t)BOX_COL_RIGHT; col++) {
+    map_set(col, BOX_ROW_TOP, TILE_IDX_BOX_BORDER);
+  }
+  // Middle rows: left border, background, right border.
+  for (uint16_t row = TEXT_ROW_START;
+       row < (uint16_t)(TEXT_ROW_START + TEXTBOX_LINES); row++) {
+    map_set(BOX_COL_LEFT, row, TILE_IDX_BOX_BORDER);
+    for (uint16_t col = TEXT_COL_START;
+         col < (uint16_t)(TEXT_COL_START + TEXTBOX_CHARS_W); col++) {
+      map_set(col, row, TILE_IDX_BOX_BG);
+    }
+    map_set(BOX_COL_RIGHT, row, TILE_IDX_BOX_BORDER);
+  }
+  // Bottom border row (with cursor at the far right corner).
+  for (uint16_t col = BOX_COL_LEFT; col < (uint16_t)BOX_COL_RIGHT; col++) {
+    map_set(col, BOX_ROW_BOT, TILE_IDX_BOX_BORDER);
+  }
+  map_set(BOX_COL_RIGHT, BOX_ROW_BOT, TILE_IDX_CURSOR);
+
+  // --- Render wrapped text into the inner area ---
+  const char *p = textbox_text_buf;
+  for (uint16_t line = 0; line < TEXTBOX_LINES; line++) {
+    uint16_t col = TEXT_COL_START;
+    uint16_t row = (uint16_t)(TEXT_ROW_START + line);
+    uint16_t max_col = (uint16_t)(TEXT_COL_START + TEXTBOX_CHARS_W);
+
+    while (*p != '\0' && *p != '\n' && col < max_col) {
+      uint8_t ch = (uint8_t)*p;
+      uint16_t tile = (ch >= 32 && ch <= 127)
+                          ? (uint16_t)(TILE_IDX_FONT_BASE + ch - 32)
+                          : TILE_IDX_BOX_BG;
+      map_set(col, row, tile);
+      col++;
+      p++;
+    }
+
+    // Pad remainder of line with background.
+    while (col < max_col) {
+      map_set(col, row, TILE_IDX_BOX_BG);
+      col++;
+    }
+
+    if (*p == '\n') {
+      p++;
+    }
+  }
+
+  // Enable BG1.
+  REG_DISPCNT |= BG1_ENABLE;
+
+  textbox_open_flag = true;
+}
+
+// ---------------------------------------------------------------------------
+// textbox_update — called every frame by the VM runner while waiting
+// ---------------------------------------------------------------------------
+
+bool textbox_update(void) {
+  if (!textbox_open_flag) {
+    return true;
+  }
+
+  if (key_pressed(KEY_A)) {
+    textbox_close();
+    return true;
+  }
+
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// textbox_close
+// ---------------------------------------------------------------------------
+
+void textbox_close(void) {
+  if (!textbox_open_flag) {
+    return;
+  }
+
+  REG_DISPCNT &= (uint16_t)(~BG1_ENABLE);
+  textbox_open_flag = false;
+}
