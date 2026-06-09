@@ -53,13 +53,14 @@ engine.json  Field/metadata definitions consumed by GBA Studio's compiler
 - **`movement.{c,h}`** — Pure per-actor movement-pattern math (GB Studio's
   "movement types"): patrol (pace back and forth across a bounds rectangle,
   reversing at each edge) and follow (walk toward a target on each axis
-  independently while within range, without overshooting). Logic is done
-  and tested; not yet wired into `engine_update` pending new compiled-data
-  fields (move speed, patrol/follow bounds) — see Status below.
+  independently while within range, without overshooting). Logic is tested
+  and wired into `engine_update` for compiled actor definitions that provide
+  movement fields.
 - **`trigger.{c,h}`** — Pure scene-trigger geometry: axis-aligned overlap
   testing between an actor and rectangular trigger zones, plus a
-  deterministic first-match scan over a scene's zones. Logic is done and
-  tested; not yet wired in pending a finalised compiled trigger-zone format.
+  deterministic first-match scan over a scene's zones. Logic is tested and
+  wired through compiled `gba_trigger_def_t` records so trigger scripts run
+  once when the player enters a zone.
 - **`text.{c,h}`** — Pure dialogue-text helpers: `{N}`-placeholder variable
   substitution and greedy word-wrap to a fixed character width.
 - **`savegame.{c,h}`** — Pure save-data encode/decode: a fixed-size,
@@ -86,9 +87,8 @@ underneath several of them already exists and is unit-tested (see below):
       variable substitution and word-wrap logic done (`text.{c,h}`)
 - [x] Actor scripting fundamentals (variables, math, conditionals, control
       flow VM opcodes) — movement/interaction opcodes still to come
-- [ ] Scene triggers and events — overlap-detection logic done
-      (`trigger.{c,h}`); needs a compiled trigger-zone data format and
-      VM/engine wiring to actually run a zone's script on entry
+- [x] Scene triggers — overlap-detection logic (`trigger.{c,h}`), compiled
+      trigger-zone records, and VM script dispatch on entry are wired
 - [ ] Real background tile graphics from compiled art (vs. solid/checker test tiles) —
       camera/scroll done (`camera.{c,h}`)
 - [ ] Sprite rendering via OAM
@@ -96,10 +96,8 @@ underneath several of them already exists and is unit-tested (see below):
 - [ ] Save/load *hardware* (SRAM HAL, opcodes, menu UI) — record format
       done (`savegame.{c,h}`)
 - [x] Collision-aware actor movement (`collision.{c,h}`)
-- [ ] Movement *types* (static/patrol/follow) — velocity logic done
-      (`movement.{c,h}`); needs new per-actor compiled-data fields (move
-      speed, patrol/follow bounds distinct from the collision hitbox) before
-      it can drive `engine_update`
+- [x] Movement *types* (static/patrol/follow) — velocity logic
+      (`movement.{c,h}`) is tested and driven from `engine_update`
 
 ## Building
 
@@ -116,6 +114,29 @@ This produces `bin/game.gba` — a flashable/emulatable GBA ROM.
 
 Two layers of testing back this engine, mirroring the split between
 "hardware-facing" and "portable" code described above:
+
+Host tests require a native C compiler and `make`. On Windows, install MSYS2
+with either UCRT64 or CLANG64 packages, then make the matching `bin` directory
+visible to the shell before running the commands below.
+
+For UCRT64:
+
+```powershell
+pacman -S --needed mingw-w64-ucrt-x86_64-gcc make
+$env:Path = "C:\msys64\ucrt64\bin;$env:Path"
+gcc --version
+make --version
+```
+
+For CLANG64:
+
+```powershell
+pacman -S --needed mingw-w64-clang-x86_64-clang make
+$env:Path = "C:\msys64\clang64\bin;$env:Path"
+$env:HOST_CC = "clang"
+clang --version
+make --version
+```
 
 - **Unit tests (host-side, fast).** Several engine subsystems are
   deliberately split into a "portable, hardware-free logic" half and a
@@ -149,6 +170,12 @@ Two layers of testing back this engine, mirroring the split between
 
   ```sh
   make test-integration
+  ```
+
+  Run both host layers together with:
+
+  ```sh
+  make test-host
   ```
 
 - **Build verification (devkitARM).** CI also builds an actual `.gba` ROM
@@ -187,7 +214,7 @@ Practically, this means the workflow for engine changes is:
 2. In GBA Studio, bump the submodule pointer
    (`git -C appData/engine/gbavm pull && git add appData/engine/gbavm`)
    to the new commit.
-3. Run `make test` from GBA Studio's tooling to confirm the suite still
+3. Run `make test-host` from GBA Studio's pinned submodule to confirm the suite still
    passes against the pinned commit before committing the bump.
 
 ## Using this engine elsewhere
