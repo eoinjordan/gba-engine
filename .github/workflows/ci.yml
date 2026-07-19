@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -33,15 +33,15 @@ jobs:
   # cover — register layout, linker script, ABI, etc.
   e2e-rom-smoke:
     name: E2E ROM smoke
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
       - name: Install devkitPro GBA toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ca-certificates apt-transport-https
+          sudo add-apt-repository -y universe
+          sudo apt-get install -y --no-install-recommends ca-certificates apt-transport-https mgba-sdl
           echo 'deb [trusted=yes] https://apt.devkitpro.org stable main' \
             | sudo tee /etc/apt/sources.list.d/devkitpro.list
           sudo apt-get update
@@ -64,6 +64,11 @@ jobs:
           size=$(stat -c%s bin/game.gba)
           echo "ROM size: $size bytes"
           test "$size" -ge 192
+
+      - name: Boot ROM in mGBA
+        env:
+          GBA_ENGINE_EMULATOR_TIMEOUT_SECS: 5
+        run: make test-e2e
 
       - name: Upload ROM artifact
         uses: actions/upload-artifact@v4

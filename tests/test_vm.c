@@ -237,6 +237,66 @@ TEST(actor_set_hidden_dispatches_flag) {
   ASSERT_EQ(stub_last_actor_hidden, 1);
 }
 
+TEST(actor_set_collisions_dispatches_flag) {
+  reset_vm();
+
+  static const uint8_t script[] = {
+      VM_OP_ACTOR_SET_COLLISIONS, 2, 0, VM_OP_END,
+  };
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  script_runner_update();
+
+  ASSERT_EQ(stub_actor_set_collisions_calls, 1);
+  ASSERT_EQ(stub_last_actor_index, 2);
+  ASSERT_EQ(stub_last_actor_collisions_enabled, 0);
+}
+
+TEST(if_actor_at_position_branches_only_when_the_position_matches) {
+  reset_vm();
+  stub_actor_at_position_result = true;
+
+  static const uint8_t script[] = {
+      VM_OP_IF_ACTOR_AT_POS, 3, 40, 56, 0x03, 0x00,
+      VM_OP_SET_CONST, 0, 9, VM_OP_END,
+  };
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  script_runner_update();
+
+  ASSERT_EQ(stub_actor_at_position_calls, 1);
+  ASSERT_EQ(stub_last_actor_index, 3);
+  ASSERT_EQ(stub_last_actor_x, 40);
+  ASSERT_EQ(stub_last_actor_y, 56);
+  ASSERT_EQ(vm_variables[0], 0);
+
+  reset_vm();
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  script_runner_update();
+  ASSERT_EQ(vm_variables[0], 9);
+}
+
+TEST(if_actor_relative_branches_only_when_the_relation_matches) {
+  reset_vm();
+  stub_actor_relative_result = true;
+
+  static const uint8_t script[] = {
+      VM_OP_IF_ACTOR_RELATIVE, 1, 2, 3, 0x03, 0x00,
+      VM_OP_SET_CONST, 0, 9, VM_OP_END,
+  };
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  script_runner_update();
+
+  ASSERT_EQ(stub_actor_relative_calls, 1);
+  ASSERT_EQ(stub_last_actor_index, 1);
+  ASSERT_EQ(stub_last_other_actor_index, 2);
+  ASSERT_EQ(stub_last_actor_relation, 3);
+  ASSERT_EQ(vm_variables[0], 0);
+
+  reset_vm();
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  script_runner_update();
+  ASSERT_EQ(vm_variables[0], 9);
+}
+
 TEST(multiple_opcodes_run_in_sequence_within_a_single_script) {
   reset_vm();
 
@@ -1189,10 +1249,17 @@ int main(void) {
   RUN_TEST(actor_move_relative_decodes_signed_deltas);
   RUN_TEST(actor_set_direction_dispatches_direction);
   RUN_TEST(actor_set_hidden_dispatches_flag);
+  RUN_TEST(actor_set_collisions_dispatches_flag);
+  RUN_TEST(if_actor_at_position_branches_only_when_the_position_matches);
+  RUN_TEST(if_actor_relative_branches_only_when_the_relation_matches);
   RUN_TEST(multiple_opcodes_run_in_sequence_within_a_single_script);
   RUN_TEST(unknown_opcode_raises_an_exception_and_terminates_the_script);
 
   RUN_TEST(wait_opcode_pauses_the_script_for_n_frames);
+
+  RUN_TEST(show_text_opcode_calls_textbox_open_with_inline_string);
+  RUN_TEST(show_text_opcode_blocks_until_textbox_update_returns_true);
+  RUN_TEST(show_text_opcode_advances_pc_past_the_inline_string);
 
   RUN_TEST(set_const_opcode_assigns_an_immediate_value_to_a_variable);
   RUN_TEST(copy_var_opcode_copies_one_variables_value_into_another);

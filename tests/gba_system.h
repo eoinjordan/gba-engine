@@ -69,6 +69,7 @@ extern uint16_t test_mem_oam[0x400 / 2];
 #define BG2_ENABLE 0x0400
 #define BG3_ENABLE 0x0800
 #define OBJ_ENABLE 0x1000
+#define OBJ_1D_MAP 0x0040
 
 #define KEY_A 0x0001
 #define KEY_B 0x0002

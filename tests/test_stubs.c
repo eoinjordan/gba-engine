@@ -23,6 +23,14 @@ int stub_actor_set_dir_calls = 0;
 uint8_t stub_last_actor_dir = 0;
 int stub_actor_set_hidden_calls = 0;
 uint8_t stub_last_actor_hidden = 0;
+int stub_actor_set_collisions_calls = 0;
+uint8_t stub_last_actor_collisions_enabled = 0;
+bool stub_actor_at_position_result = false;
+int stub_actor_at_position_calls = 0;
+bool stub_actor_relative_result = false;
+int stub_actor_relative_calls = 0;
+uint8_t stub_last_other_actor_index = 0;
+uint8_t stub_last_actor_relation = 0;
 
 void stub_reset(void) {
   stub_scene_load_calls = 0;
@@ -44,6 +52,14 @@ void stub_reset(void) {
   stub_last_actor_dir = 0;
   stub_actor_set_hidden_calls = 0;
   stub_last_actor_hidden = 0;
+  stub_actor_set_collisions_calls = 0;
+  stub_last_actor_collisions_enabled = 0;
+  stub_actor_at_position_result = false;
+  stub_actor_at_position_calls = 0;
+  stub_actor_relative_result = false;
+  stub_actor_relative_calls = 0;
+  stub_last_other_actor_index = 0;
+  stub_last_actor_relation = 0;
 }
 
 // vm.c declares these `extern` and calls them directly when it executes
@@ -103,4 +119,26 @@ void vm_actor_set_hidden(uint8_t actor, uint8_t hidden) {
   stub_actor_set_hidden_calls++;
   stub_last_actor_index = actor;
   stub_last_actor_hidden = hidden;
+}
+
+void vm_actor_set_collisions(uint8_t actor, uint8_t enabled) {
+  stub_actor_set_collisions_calls++;
+  stub_last_actor_index = actor;
+  stub_last_actor_collisions_enabled = enabled;
+}
+
+bool vm_actor_at_position(uint8_t actor, uint8_t x, uint8_t y) {
+  stub_actor_at_position_calls++;
+  stub_last_actor_index = actor;
+  stub_last_actor_x = x;
+  stub_last_actor_y = y;
+  return stub_actor_at_position_result;
+}
+
+bool vm_actor_is_relative(uint8_t actor, uint8_t other_actor, uint8_t dir) {
+  stub_actor_relative_calls++;
+  stub_last_actor_index = actor;
+  stub_last_other_actor_index = other_actor;
+  stub_last_actor_relation = dir;
+  return stub_actor_relative_result;
 }

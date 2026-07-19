@@ -971,6 +971,41 @@ void vm_actor_set_hidden(uint8_t actor_index, uint8_t hidden) {
   actor->hidden = hidden != 0;
 }
 
+void vm_actor_set_collisions(uint8_t actor_index, uint8_t enabled) {
+  actor_t *actor = vm_actor(actor_index);
+  if (actor == NULL) {
+    return;
+  }
+  actor->collision_enabled = enabled != 0;
+}
+
+bool vm_actor_at_position(uint8_t actor_index, uint8_t x, uint8_t y) {
+  const actor_t *actor = vm_actor(actor_index);
+  return actor != NULL && actor->x == x && actor->y == y;
+}
+
+bool vm_actor_is_relative(uint8_t actor_index, uint8_t other_actor_index,
+                          uint8_t direction) {
+  const actor_t *actor = vm_actor(actor_index);
+  const actor_t *other = vm_actor(other_actor_index);
+  if (actor == NULL || other == NULL) {
+    return false;
+  }
+
+  switch (direction) {
+  case 0: // down / below
+    return actor->y > other->y;
+  case 1: // left
+    return actor->x < other->x;
+  case 2: // right
+    return actor->x > other->x;
+  case 3: // up / above
+    return actor->y < other->y;
+  default:
+    return false;
+  }
+}
+
 actor_t *spawn_actor(uint8_t sprite_index, uint16_t x, uint16_t y) {
   for (uint8_t i = 0; i < MAX_ACTORS; i++) {
     actor_t *actor = &actors[i];

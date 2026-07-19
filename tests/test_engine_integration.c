@@ -102,7 +102,7 @@ TEST(active_actors_move_and_destroyed_slots_are_reused) {
   destroy_actor(second);
 
   actor_t *reused = spawn_actor(11, 30, 32);
-  ASSERT_EQ(reused, second);
+  ASSERT_TRUE(reused == second);
   ASSERT_EQ(reused->sprite_index, 11);
 }
 
@@ -227,6 +227,25 @@ TEST(animated_sprites_select_idle_and_moving_frames_by_direction) {
   ASSERT_EQ(test_mem_oam[2] & 0x03FFu, 5);
 }
 
+TEST(actor_vm_queries_and_collision_toggle_use_live_runtime_state) {
+  reset_engine();
+  engine_update(); // Drain bootstrap and spawn the scene player.
+
+  actor_t *other = spawn_actor(0, 32, 48);
+  ASSERT_NOT_NULL(other);
+
+  ASSERT_TRUE(vm_actor_at_position(0, 0, 0));
+  ASSERT_TRUE(!vm_actor_at_position(0, 1, 0));
+  ASSERT_TRUE(vm_actor_is_relative(0, 1, 3)); // player is above actor 1
+  ASSERT_TRUE(vm_actor_is_relative(1, 0, 0)); // actor 1 is below player
+  ASSERT_TRUE(!vm_actor_is_relative(0, 99, 0));
+
+  vm_actor_set_collisions(1, 0);
+  ASSERT_TRUE(!other->collision_enabled);
+  vm_actor_set_collisions(1, 1);
+  ASSERT_TRUE(other->collision_enabled);
+}
+
 int main(void) {
   RUN_TEST(engine_init_schedules_bootstrap_and_enables_bg0);
   RUN_TEST(load_scene_renders_compiled_tilemap_and_tileset);
@@ -237,5 +256,6 @@ int main(void) {
   RUN_TEST(movement_type_follow_chases_the_player_only_within_range);
   RUN_TEST(scene_trigger_runs_its_script_once_when_the_player_enters);
   RUN_TEST(animated_sprites_select_idle_and_moving_frames_by_direction);
+  RUN_TEST(actor_vm_queries_and_collision_toggle_use_live_runtime_state);
   return TEST_REPORT();
 }
