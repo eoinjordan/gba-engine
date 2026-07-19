@@ -45,6 +45,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends mgba-sdl
+          test -x /usr/games/mgba
 
       - name: Verify pinned devkitPro GBA toolchain
         run: |
@@ -69,6 +70,7 @@ jobs:
 
       - name: Boot ROM in mGBA
         env:
+          GBA_ENGINE_EMULATOR: /usr/games/mgba
           GBA_ENGINE_EMULATOR_TIMEOUT_SECS: 5
         run: make test-e2e
 
