@@ -76,6 +76,21 @@ static const uint8_t scene1_start_script[] = {
     0x00,       // VM_OP_END
 };
 
+static const uint8_t scene4_actor_interact_script[] = {
+    VM_OP_SET_SCENE_TONE, 2,
+    VM_OP_END,
+};
+
+static const gba_actor_def_t scene4_actors[] = {
+    {
+        .x = 8,
+        .y = 0,
+        .move_speed = 1,
+        .collision_enabled = true,
+        .interact_script = scene4_actor_interact_script,
+    },
+};
+
 static const gba_scene_def_t test_scene0 = {
     .width        = 6,
     .height       = 6,
@@ -168,11 +183,23 @@ static const gba_scene_def_t test_scene3 = {
     .sprites             = scene3_sprites,
 };
 
+// Dedicated interaction scene: an actor stands one tile to the right of the
+// player and changes the palette when interacted with.
+static const gba_scene_def_t test_scene4 = {
+    .width         = 4,
+    .height        = 4,
+    .type          = 0,
+    .collisions    = scene1_collisions,
+    .actor_count   = 1,
+    .actors        = scene4_actors,
+};
+
 static const gba_scene_def_t *const test_scenes[] = {
     &test_scene0,
     &test_scene1,
     &test_scene2,
     &test_scene3,
+    &test_scene4,
 };
 
 static const uint8_t test_bootstrap_script[] = {
@@ -181,7 +208,7 @@ static const uint8_t test_bootstrap_script[] = {
 };
 
 static const gba_game_data_t gba_game_data = {
-    .scene_count       = 4,
+    .scene_count       = 5,
     .start_scene_index = 0,
     .start_x           = 0,
     .start_y           = 0,

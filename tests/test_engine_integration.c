@@ -2,6 +2,8 @@
 #include "gba_system.h"
 #include "test_engine_stubs.h"
 #include "test_framework.h"
+#include "textbox.h"
+#include "vm.h"
 
 static uint16_t *screenblock(unsigned block) {
   return &test_mem_vram[(block * 0x0800u) / sizeof(uint16_t)];
@@ -69,6 +71,37 @@ TEST(engine_update_cycles_scenes_when_start_is_pressed) {
   ASSERT_EQ(test_mem_palette[0], RGB15(4, 1, 5));
   ASSERT_EQ(map[3 * 32 + 3], 1);
   ASSERT_EQ(map[4 * 32 + 4], 0);
+}
+
+TEST(textbox_dismiss_input_is_not_reused_for_movement_or_interaction) {
+  static uint8_t dialogue_script[] = {
+      VM_OP_SHOW_TEXT, 'T', 'a', 'l', 'k', 0,
+      VM_OP_END,
+  };
+
+  reset_engine();
+  engine_update(); // Drain bootstrap.
+  load_scene(4);   // Spawn the adjacent interaction test actor.
+
+  uint16_t original_palette = test_mem_palette[0];
+  ASSERT_TRUE(vm_actor_at_position(0, 0, 0));
+
+  script_execute(0, dialogue_script, NULL, 0);
+  engine_update();
+  ASSERT_TRUE(textbox_is_open());
+
+  // A dismisses the text; RIGHT deliberately shares the frame to prove all
+  // gameplay input is consumed while dialogue owns the controls.
+  test_set_keys(KEY_A | KEY_RIGHT);
+  engine_update();
+  ASSERT_TRUE(!textbox_is_open());
+  ASSERT_TRUE(vm_actor_at_position(0, 0, 0));
+
+  // If the dismissing A press leaked into actor interaction, the adjacent
+  // actor's script would set scene tone 2 on this next runner update.
+  test_set_keys(0);
+  engine_update();
+  ASSERT_EQ(test_mem_palette[0], original_palette);
 }
 
 TEST(load_scene_schedules_its_start_script_after_spawning_actors) {
@@ -264,6 +297,7 @@ int main(void) {
   RUN_TEST(vm_scene_set_tone_reloads_the_palette_for_the_current_scene);
   RUN_TEST(load_scene_schedules_its_start_script_after_spawning_actors);
   RUN_TEST(engine_update_cycles_scenes_when_start_is_pressed);
+  RUN_TEST(textbox_dismiss_input_is_not_reused_for_movement_or_interaction);
   RUN_TEST(active_actors_move_and_destroyed_slots_are_reused);
   RUN_TEST(movement_type_patrol_paces_back_and_forth_across_its_bounds);
   RUN_TEST(movement_type_follow_chases_the_player_only_within_range);

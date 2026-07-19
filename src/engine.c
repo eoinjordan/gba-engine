@@ -561,17 +561,23 @@ void engine_update(void) {
   // Phase 1: input is read so the edge-detection HAL is exercised; scripted
   // behaviour arrives with the VM port.
   uint16_t keys = get_keys();
-  if (keys & KEY_START) {
+  const bool gameplay_input_was_locked = textbox_is_open() || VM_ISLOCKED();
+  if (!gameplay_input_was_locked && (keys & KEY_START)) {
     load_scene((uint8_t)((current_scene_index + 1) % GBA_GAME_DATA.scene_count));
   }
 
   (void)script_runner_update();
+  // Preserve the pre-update state so the A press that closes a textbox cannot
+  // fall through and immediately start another nearby interaction. Also lock
+  // input when the runner opened a textbox during this frame.
+  const bool gameplay_input_locked = gameplay_input_was_locked ||
+                                     textbox_is_open() || VM_ISLOCKED();
 
   // Actor interaction: when A is pressed and no textbox or script is blocking,
   // find the nearest non-player actor within one tile (16px) and run its
   // interact_script if it has one.
   if (key_pressed(KEY_A) && current_scene.num_actors > 0 && actors[0].active &&
-      !VM_ISLOCKED()) {
+      !gameplay_input_locked) {
     const actor_t *player = &actors[0];
     for (uint8_t ai = 1; ai < current_scene.num_actors; ai++) {
       const actor_t *other = &actors[ai];
@@ -608,7 +614,7 @@ void engine_update(void) {
     player->vel_x = 0;
     player->vel_y = 0;
 
-    if (current_scene.type == SCENE_TYPE_ISOMETRIC) {
+    if (!gameplay_input_locked && current_scene.type == SCENE_TYPE_ISOMETRIC) {
       // Isometric D-pad mapping (tile-grid units):
       //   UP    → NE: tile_y--  → screen_x+, screen_y-
       //   DOWN  → SW: tile_y++  → screen_x-, screen_y+
@@ -620,7 +626,7 @@ void engine_update(void) {
       else if (keys & KEY_DOWN)  { player->vel_y = step; }
       if (keys & KEY_LEFT)  { player->vel_x = (int16_t)(-step); }
       else if (keys & KEY_RIGHT) { player->vel_x = step; }
-    } else {
+    } else if (!gameplay_input_locked) {
       if (keys & KEY_LEFT) {
         player->vel_x = (int16_t)(-step);
       } else if (keys & KEY_RIGHT) {
