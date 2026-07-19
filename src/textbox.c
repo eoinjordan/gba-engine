@@ -372,3 +372,5 @@ void textbox_close(void) {
   REG_DISPCNT &= (uint16_t)(~BG1_ENABLE);
   textbox_open_flag = false;
 }
+
+bool textbox_is_open(void) { return textbox_open_flag; }

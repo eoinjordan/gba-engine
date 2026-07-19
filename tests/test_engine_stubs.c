@@ -1,4 +1,5 @@
 #include "gba_system.h"
+#include "textbox.h"
 #include <string.h>
 
 uint16_t test_reg_dispcnt;
@@ -30,6 +31,8 @@ unsigned test_load_palette_calls;
 
 static uint16_t keys_current;
 static uint16_t keys_previous;
+static uint16_t keys_next;
+static bool textbox_open_flag;
 
 void test_reset_hardware(void) {
   test_reg_dispcnt = 0;
@@ -56,6 +59,8 @@ void test_reset_hardware(void) {
   memset(test_mem_oam, 0, sizeof(test_mem_oam));
   keys_current = 0;
   keys_previous = 0;
+  keys_next = 0;
+  textbox_open_flag = false;
   test_wait_vblank_calls = 0;
   test_load_palette_calls = 0;
 }
@@ -63,7 +68,7 @@ void test_reset_hardware(void) {
 void test_reset_environment(void) { test_reset_hardware(); }
 
 void test_set_keys(uint16_t keys) {
-  keys_current = keys;
+  keys_next = keys;
   test_reg_keyinput = (uint16_t)(~keys & 0x03FF);
 }
 
@@ -79,6 +84,7 @@ void vsync(void) { wait_vblank(); }
 
 uint16_t get_keys(void) {
   keys_previous = keys_current;
+  keys_current = keys_next;
   return keys_current;
 }
 
@@ -118,6 +124,19 @@ void dma_fill(uint32_t value, void *dest, uint32_t count) {
 // BG1; for integration tests we stub them out to avoid linking hardware-facing
 // code that doesn't compile under the host toolchain.
 void textbox_init(void) {}
-void textbox_open(const char *text) { (void)text; }
-bool textbox_update(void) { return true; }
-void textbox_close(void) {}
+void textbox_open(const char *text) {
+  (void)text;
+  textbox_open_flag = true;
+}
+bool textbox_update(void) {
+  if (!textbox_open_flag) {
+    return true;
+  }
+  if (key_pressed(KEY_A)) {
+    textbox_close();
+    return true;
+  }
+  return false;
+}
+void textbox_close(void) { textbox_open_flag = false; }
+bool textbox_is_open(void) { return textbox_open_flag; }

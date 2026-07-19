@@ -21,6 +21,11 @@ bool textbox_update(void);
 // on dismiss; exposed for forced teardown (e.g. scene transition).
 void textbox_close(void);
 
+// True while dialogue is visible. Gameplay input uses this to consume the
+// keypress that dismisses a textbox instead of reusing it for movement or a
+// second actor interaction in the same frame.
+bool textbox_is_open(void);
+
 // One-time hardware init: loads the embedded font into VRAM charblock 1 and
 // writes the textbox palette into palette bank 15. Call from engine_init().
 void textbox_init(void);
