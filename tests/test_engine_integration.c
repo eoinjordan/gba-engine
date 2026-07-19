@@ -65,9 +65,21 @@ TEST(engine_update_cycles_scenes_when_start_is_pressed) {
   engine_update();
 
   uint16_t *map = screenblock(28);
-  ASSERT_EQ(test_mem_palette[0], RGB15(1, 3, 4));
+  // Scene 1's start script runs in the same update and selects tone 3.
+  ASSERT_EQ(test_mem_palette[0], RGB15(4, 1, 5));
   ASSERT_EQ(map[3 * 32 + 3], 1);
   ASSERT_EQ(map[4 * 32 + 4], 0);
+}
+
+TEST(load_scene_schedules_its_start_script_after_spawning_actors) {
+  reset_engine();
+  engine_update(); // Drain bootstrap for scene 0.
+
+  load_scene(1);
+  ASSERT_EQ(test_mem_palette[0], RGB15(1, 3, 4));
+
+  engine_update();
+  ASSERT_EQ(test_mem_palette[0], RGB15(4, 1, 5));
 }
 
 TEST(active_actors_move_and_destroyed_slots_are_reused) {
@@ -250,6 +262,7 @@ int main(void) {
   RUN_TEST(engine_init_schedules_bootstrap_and_enables_bg0);
   RUN_TEST(load_scene_renders_compiled_tilemap_and_tileset);
   RUN_TEST(vm_scene_set_tone_reloads_the_palette_for_the_current_scene);
+  RUN_TEST(load_scene_schedules_its_start_script_after_spawning_actors);
   RUN_TEST(engine_update_cycles_scenes_when_start_is_pressed);
   RUN_TEST(active_actors_move_and_destroyed_slots_are_reused);
   RUN_TEST(movement_type_patrol_paces_back_and_forth_across_its_bounds);

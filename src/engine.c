@@ -913,6 +913,14 @@ void load_scene(uint8_t scene_index) {
       actor->hidden = actor_def->hidden;
     }
   }
+
+  // Match GB Studio's scene lifecycle: run the scene script once after the
+  // player and actors exist. Scheduling a fresh context is safe even when a
+  // VM_OP_LOAD_SCENE initiated this load; the caller finishes its current
+  // context while this scene-start context begins on the next runner update.
+  if (current_scene_def->start_script != NULL) {
+    script_execute(0, (UBYTE *)current_scene_def->start_script, NULL, 0);
+  }
 }
 
 void vm_scene_load(uint8_t scene_index) { load_scene(scene_index); }

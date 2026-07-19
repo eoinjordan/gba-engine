@@ -71,6 +71,11 @@ static const uint8_t scene1_tilemap[] = {
     1, 1, 1, 1,
 };
 
+static const uint8_t scene1_start_script[] = {
+    0x02, 0x03, // VM_OP_SET_SCENE_TONE 3
+    0x00,       // VM_OP_END
+};
+
 static const gba_scene_def_t test_scene0 = {
     .width        = 6,
     .height       = 6,
@@ -89,6 +94,7 @@ static const gba_scene_def_t test_scene1 = {
     .tileset      = scene1_tileset,
     .tilemap      = scene1_tilemap,
     .collisions   = scene1_collisions,
+    .start_script = scene1_start_script,
 };
 
 // A scene with a single trigger zone in tile coordinates (2,2)-(2×2 tiles),

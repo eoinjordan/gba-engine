@@ -81,6 +81,9 @@ typedef struct gba_scene_def_t {
   uint8_t sprite_count;
   const gba_sprite_def_t *const *sprites;
   const gba_trigger_def_t *triggers;
+  // Optional scene-start script. Scheduled after the player and scene actors
+  // have spawned so actor opcodes can safely target their runtime indices.
+  const uint8_t *start_script;
 } gba_scene_def_t;
 
 // Scene type identifiers (must match compileData.ts sceneTypeIds)
