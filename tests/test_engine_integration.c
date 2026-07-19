@@ -207,6 +207,26 @@ TEST(scene_trigger_runs_its_script_once_when_the_player_enters) {
   ASSERT_EQ(test_mem_palette[0], RGB15(6, 3, 1));
 }
 
+TEST(animated_sprites_select_idle_and_moving_frames_by_direction) {
+  reset_engine();
+  engine_update(); // Drain the bootstrap script before selecting scene 3.
+  load_scene(3);
+
+  // The player starts facing down (direction 0), selecting idle frame 0.
+  engine_update();
+  ASSERT_EQ(test_mem_oam[2] & 0x03FFu, 0);
+
+  // GB Studio direction 1 is left, which maps to compiler animation slot 3.
+  vm_actor_set_direction(0, 1);
+  engine_update();
+  ASSERT_EQ(test_mem_oam[2] & 0x03FFu, 3);
+
+  // Moving right updates facing to direction 2 and selects moving-right slot 5.
+  test_set_keys(KEY_RIGHT);
+  engine_update();
+  ASSERT_EQ(test_mem_oam[2] & 0x03FFu, 5);
+}
+
 int main(void) {
   RUN_TEST(engine_init_schedules_bootstrap_and_enables_bg0);
   RUN_TEST(load_scene_renders_compiled_tilemap_and_tileset);
@@ -216,5 +236,6 @@ int main(void) {
   RUN_TEST(movement_type_patrol_paces_back_and_forth_across_its_bounds);
   RUN_TEST(movement_type_follow_chases_the_player_only_within_range);
   RUN_TEST(scene_trigger_runs_its_script_once_when_the_player_enters);
+  RUN_TEST(animated_sprites_select_idle_and_moving_frames_by_direction);
   return TEST_REPORT();
 }

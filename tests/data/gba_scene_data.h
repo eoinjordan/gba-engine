@@ -119,10 +119,54 @@ static const gba_scene_def_t test_scene2 = {
     .triggers      = test_scene2_triggers,
 };
 
+// Eight one-tile frames in compiler animation order:
+// down, right, up, left, then the four moving variants.
+static const uint8_t scene3_sprite_tileset[8 * 32] = {0};
+static const gba_metasprite_tile_t scene3_frame0[] = {{0, 0, 0, 0, false, false}};
+static const gba_metasprite_tile_t scene3_frame1[] = {{0, 0, 1, 0, false, false}};
+static const gba_metasprite_tile_t scene3_frame2[] = {{0, 0, 2, 0, false, false}};
+static const gba_metasprite_tile_t scene3_frame3[] = {{0, 0, 3, 0, false, false}};
+static const gba_metasprite_tile_t scene3_frame4[] = {{0, 0, 4, 0, false, false}};
+static const gba_metasprite_tile_t scene3_frame5[] = {{0, 0, 5, 0, false, false}};
+static const gba_metasprite_tile_t scene3_frame6[] = {{0, 0, 6, 0, false, false}};
+static const gba_metasprite_tile_t scene3_frame7[] = {{0, 0, 7, 0, false, false}};
+static const gba_metasprite_tile_t *const scene3_frames[] = {
+    scene3_frame0, scene3_frame1, scene3_frame2, scene3_frame3,
+    scene3_frame4, scene3_frame5, scene3_frame6, scene3_frame7,
+};
+static const uint8_t scene3_frame_lengths[] = {1, 1, 1, 1, 1, 1, 1, 1};
+static const gba_sprite_anim_t scene3_animations[] = {
+    {0, 0}, {1, 1}, {2, 2}, {3, 3},
+    {4, 4}, {5, 5}, {6, 6}, {7, 7},
+};
+static const gba_sprite_def_t scene3_sprite = {
+    .tileset_len   = sizeof(scene3_sprite_tileset),
+    .tileset       = scene3_sprite_tileset,
+    .tile_count    = 8,
+    .metasprite_len = 1,
+    .metasprite    = scene3_frame0,
+    .frame_count   = 8,
+    .frames        = scene3_frames,
+    .frame_lengths = scene3_frame_lengths,
+    .anim_count    = 8,
+    .animations    = scene3_animations,
+};
+static const gba_sprite_def_t *const scene3_sprites[] = {&scene3_sprite};
+static const gba_scene_def_t test_scene3 = {
+    .width               = 4,
+    .height              = 4,
+    .type                = 0,
+    .player_sprite_index = 0,
+    .collisions          = scene1_collisions,
+    .sprite_count        = 1,
+    .sprites             = scene3_sprites,
+};
+
 static const gba_scene_def_t *const test_scenes[] = {
     &test_scene0,
     &test_scene1,
     &test_scene2,
+    &test_scene3,
 };
 
 static const uint8_t test_bootstrap_script[] = {
@@ -131,7 +175,7 @@ static const uint8_t test_bootstrap_script[] = {
 };
 
 static const gba_game_data_t gba_game_data = {
-    .scene_count       = 3,
+    .scene_count       = 4,
     .start_scene_index = 0,
     .start_x           = 0,
     .start_y           = 0,
