@@ -12,6 +12,9 @@ extern void vm_actor_set_position(UBYTE actor, UBYTE x, UBYTE y);
 extern void vm_actor_move_relative(UBYTE actor, INT8 dx, INT8 dy);
 extern void vm_actor_set_direction(UBYTE actor, UBYTE dir);
 extern void vm_actor_set_hidden(UBYTE actor, UBYTE hidden);
+extern void vm_actor_set_collisions(UBYTE actor, UBYTE enabled);
+extern bool vm_actor_at_position(UBYTE actor, UBYTE x, UBYTE y);
+extern bool vm_actor_is_relative(UBYTE actor, UBYTE other_actor, UBYTE dir);
 
 UWORD script_memory[VM_HEAP_SIZE + (VM_MAX_CONTEXTS * VM_CONTEXT_STACK_SIZE)];
 SCRIPT_CTX CTXS[VM_MAX_CONTEXTS];
@@ -366,6 +369,35 @@ UBYTE script_runner_update(void) {
         UBYTE actor = *ctx->PC++;
         UBYTE hidden = *ctx->PC++;
         vm_actor_set_hidden(actor, hidden);
+        break;
+      }
+
+      case VM_OP_ACTOR_SET_COLLISIONS: {
+        UBYTE actor = *ctx->PC++;
+        UBYTE enabled = *ctx->PC++;
+        vm_actor_set_collisions(actor, enabled);
+        break;
+      }
+
+      case VM_OP_IF_ACTOR_AT_POS: {
+        UBYTE actor = *ctx->PC++;
+        UBYTE x = *ctx->PC++;
+        UBYTE y = *ctx->PC++;
+        INT16 offset = vm_read_offset(ctx);
+        if (vm_actor_at_position(actor, x, y)) {
+          ctx->PC += offset;
+        }
+        break;
+      }
+
+      case VM_OP_IF_ACTOR_RELATIVE: {
+        UBYTE actor = *ctx->PC++;
+        UBYTE other_actor = *ctx->PC++;
+        UBYTE direction = *ctx->PC++;
+        INT16 offset = vm_read_offset(ctx);
+        if (vm_actor_is_relative(actor, other_actor, direction)) {
+          ctx->PC += offset;
+        }
         break;
       }
 

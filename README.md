@@ -88,12 +88,13 @@ underneath several of them already exists and is unit-tested (see below):
 - [ ] Text/dialogue *rendering* (font/glyph tiles, text boxes, choices) —
       variable substitution and word-wrap logic done (`text.{c,h}`)
 - [x] Actor scripting fundamentals (variables, math, conditionals, control
-      flow VM opcodes) — movement/interaction opcodes still to come
+      flow VM opcodes), actor position/direction/visibility/collision commands,
+      and actor position/relative-position conditionals — timed movement and
+      animation-state selection still to come
 - [x] Scene triggers — overlap-detection logic (`trigger.{c,h}`), compiled
       trigger-zone records, and VM script dispatch on entry are wired
-- [ ] Real background tile graphics from compiled art (vs. solid/checker test tiles) —
-      camera/scroll done (`camera.{c,h}`)
-- [ ] Sprite rendering via OAM
+- [x] Real background tile graphics from compiled art and camera scrolling
+- [x] Sprite rendering via OAM, including directional idle/moving animations
 - [ ] Audio (GBA APU / DirectSound)
 - [ ] Save/load *hardware* (SRAM HAL, opcodes, menu UI) — record format
       done (`savegame.{c,h}`)

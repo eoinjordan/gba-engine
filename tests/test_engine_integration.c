@@ -65,9 +65,21 @@ TEST(engine_update_cycles_scenes_when_start_is_pressed) {
   engine_update();
 
   uint16_t *map = screenblock(28);
-  ASSERT_EQ(test_mem_palette[0], RGB15(1, 3, 4));
+  // Scene 1's start script runs in the same update and selects tone 3.
+  ASSERT_EQ(test_mem_palette[0], RGB15(4, 1, 5));
   ASSERT_EQ(map[3 * 32 + 3], 1);
   ASSERT_EQ(map[4 * 32 + 4], 0);
+}
+
+TEST(load_scene_schedules_its_start_script_after_spawning_actors) {
+  reset_engine();
+  engine_update(); // Drain bootstrap for scene 0.
+
+  load_scene(1);
+  ASSERT_EQ(test_mem_palette[0], RGB15(1, 3, 4));
+
+  engine_update();
+  ASSERT_EQ(test_mem_palette[0], RGB15(4, 1, 5));
 }
 
 TEST(active_actors_move_and_destroyed_slots_are_reused) {
@@ -102,7 +114,7 @@ TEST(active_actors_move_and_destroyed_slots_are_reused) {
   destroy_actor(second);
 
   actor_t *reused = spawn_actor(11, 30, 32);
-  ASSERT_EQ(reused, second);
+  ASSERT_TRUE(reused == second);
   ASSERT_EQ(reused->sprite_index, 11);
 }
 
@@ -207,14 +219,56 @@ TEST(scene_trigger_runs_its_script_once_when_the_player_enters) {
   ASSERT_EQ(test_mem_palette[0], RGB15(6, 3, 1));
 }
 
+TEST(animated_sprites_select_idle_and_moving_frames_by_direction) {
+  reset_engine();
+  engine_update(); // Drain the bootstrap script before selecting scene 3.
+  load_scene(3);
+
+  // The player starts facing down (direction 0), selecting idle frame 0.
+  engine_update();
+  ASSERT_EQ(test_mem_oam[2] & 0x03FFu, 0);
+
+  // GB Studio direction 1 is left, which maps to compiler animation slot 3.
+  vm_actor_set_direction(0, 1);
+  engine_update();
+  ASSERT_EQ(test_mem_oam[2] & 0x03FFu, 3);
+
+  // Moving right updates facing to direction 2 and selects moving-right slot 5.
+  test_set_keys(KEY_RIGHT);
+  engine_update();
+  ASSERT_EQ(test_mem_oam[2] & 0x03FFu, 5);
+}
+
+TEST(actor_vm_queries_and_collision_toggle_use_live_runtime_state) {
+  reset_engine();
+  engine_update(); // Drain bootstrap and spawn the scene player.
+
+  actor_t *other = spawn_actor(0, 32, 48);
+  ASSERT_NOT_NULL(other);
+
+  ASSERT_TRUE(vm_actor_at_position(0, 0, 0));
+  ASSERT_TRUE(!vm_actor_at_position(0, 1, 0));
+  ASSERT_TRUE(vm_actor_is_relative(0, 1, 3)); // player is above actor 1
+  ASSERT_TRUE(vm_actor_is_relative(1, 0, 0)); // actor 1 is below player
+  ASSERT_TRUE(!vm_actor_is_relative(0, 99, 0));
+
+  vm_actor_set_collisions(1, 0);
+  ASSERT_TRUE(!other->collision_enabled);
+  vm_actor_set_collisions(1, 1);
+  ASSERT_TRUE(other->collision_enabled);
+}
+
 int main(void) {
   RUN_TEST(engine_init_schedules_bootstrap_and_enables_bg0);
   RUN_TEST(load_scene_renders_compiled_tilemap_and_tileset);
   RUN_TEST(vm_scene_set_tone_reloads_the_palette_for_the_current_scene);
+  RUN_TEST(load_scene_schedules_its_start_script_after_spawning_actors);
   RUN_TEST(engine_update_cycles_scenes_when_start_is_pressed);
   RUN_TEST(active_actors_move_and_destroyed_slots_are_reused);
   RUN_TEST(movement_type_patrol_paces_back_and_forth_across_its_bounds);
   RUN_TEST(movement_type_follow_chases_the_player_only_within_range);
   RUN_TEST(scene_trigger_runs_its_script_once_when_the_player_enters);
+  RUN_TEST(animated_sprites_select_idle_and_moving_frames_by_direction);
+  RUN_TEST(actor_vm_queries_and_collision_toggle_use_live_runtime_state);
   return TEST_REPORT();
 }

@@ -59,7 +59,7 @@ static const gba_game_data_t fallback_game_data = {
 
 #define CHARBLOCK(n) GBA_VRAM_ADDR((n) * 0x4000u)
 #define SCREENBLOCK(n) GBA_VRAM_ADDR((n) * 0x0800u)
-#define OBJ_VRAM ((volatile uint16_t *)0x06010000u)
+#define OBJ_VRAM GBA_VRAM_ADDR(0x10000u)
 
 #define TILE_CHARBLOCK 0
 #define MAP_SCREENBLOCK 28
@@ -285,6 +285,57 @@ static void build_iso_draw_order(void) {
   }
 }
 
+// Compiled scripts and actor definitions use GB Studio's direction order:
+// down=0, left=1, right=2, up=3. Sprite animation tables use the engine order
+// emitted by compileSprites: down, right, up, left, followed by the four
+// moving variants.
+static uint8_t actor_animation_index(const actor_t *actor) {
+  static const uint8_t direction_to_animation[4] = {0, 3, 1, 2};
+  uint8_t direction = actor->dir < 4 ? actor->dir : 0;
+  uint8_t animation = direction_to_animation[direction];
+  if (actor->vel_x != 0 || actor->vel_y != 0) {
+    animation = (uint8_t)(animation + 4);
+  }
+  return animation;
+}
+
+static const gba_metasprite_tile_t *actor_metasprite(
+    const gba_sprite_def_t *sprite, const actor_t *actor, uint8_t *tile_count) {
+  *tile_count = sprite->metasprite_len;
+
+  if (sprite->frame_count == 0 || sprite->frames == NULL ||
+      sprite->frame_lengths == NULL || sprite->anim_count == 0 ||
+      sprite->animations == NULL) {
+    return sprite->metasprite;
+  }
+
+  uint8_t animation_index = actor_animation_index(actor);
+  if (animation_index >= sprite->anim_count) {
+    animation_index = 0;
+  }
+
+  const gba_sprite_anim_t *animation = &sprite->animations[animation_index];
+  if (animation->start >= sprite->frame_count ||
+      animation->end < animation->start) {
+    return sprite->metasprite;
+  }
+
+  uint8_t end = animation->end;
+  if (end >= sprite->frame_count) {
+    end = (uint8_t)(sprite->frame_count - 1);
+  }
+  uint8_t frame_count = (uint8_t)(end - animation->start + 1);
+  uint8_t frame_index =
+      (uint8_t)(animation->start + actor->anim_frame % frame_count);
+  const gba_metasprite_tile_t *frame = sprite->frames[frame_index];
+  if (frame == NULL) {
+    return sprite->metasprite;
+  }
+
+  *tile_count = sprite->frame_lengths[frame_index];
+  return frame;
+}
+
 static void render_scene_actors(void) {
   uint16_t oam_index = 0;
   bool is_iso = (current_scene.type == SCENE_TYPE_ISOMETRIC);
@@ -319,6 +370,10 @@ static void render_scene_actors(void) {
       continue;
     }
 
+    uint8_t metasprite_len = 0;
+    const gba_metasprite_tile_t *metasprite =
+        actor_metasprite(sprite, actor, &metasprite_len);
+
     // For isometric scenes actor->x/y are tile coords; project to screen.
     // For top-down actor->x/y are already pixel coords.
     int16_t base_sx, base_sy;
@@ -331,12 +386,12 @@ static void render_scene_actors(void) {
     }
 
     uint16_t tile_base = loaded_sprite_tile_bases[actor->sprite_index];
-    for (uint8_t tile_index = 0; tile_index < sprite->metasprite_len; tile_index++) {
+    for (uint8_t tile_index = 0; tile_index < metasprite_len; tile_index++) {
       if (oam_index >= MAX_OAM_ENTRIES) {
         return;
       }
 
-      const gba_metasprite_tile_t *tile = &sprite->metasprite[tile_index];
+      const gba_metasprite_tile_t *tile = &metasprite[tile_index];
       int16_t screen_x = base_sx + tile->x;
       int16_t screen_y = base_sy + tile->y;
 
@@ -623,6 +678,16 @@ void engine_update(void) {
       }
     }
 
+    if (actor->vel_y > 0) {
+      actor->dir = 0; // down
+    } else if (actor->vel_x < 0) {
+      actor->dir = 1; // left
+    } else if (actor->vel_x > 0) {
+      actor->dir = 2; // right
+    } else if (actor->vel_y < 0) {
+      actor->dir = 3; // up
+    }
+
     if (actor->vel_x != 0 || actor->vel_y != 0) {
       if (actor->collision_enabled && current_scene_def != NULL &&
           current_scene.type != SCENE_TYPE_ISOMETRIC) {
@@ -823,6 +888,7 @@ void load_scene(uint8_t scene_index) {
     player->move_speed =
         GBA_GAME_DATA.start_move_speed > 0 ? GBA_GAME_DATA.start_move_speed : 1;
     player->anim_speed = GBA_GAME_DATA.start_anim_speed;
+    player->dir = GBA_GAME_DATA.start_direction;
     player->collision_enabled = true;
   }
 
@@ -840,11 +906,20 @@ void load_scene(uint8_t scene_index) {
       }
       actor->move_speed = actor_def->move_speed;
       actor->anim_speed = actor_def->anim_speed;
+      actor->dir = actor_def->direction;
       actor->collision_enabled = actor_def->collision_enabled;
       actor->persistent = actor_def->persistent;
       actor->pinned = actor_def->pinned;
       actor->hidden = actor_def->hidden;
     }
+  }
+
+  // Match GB Studio's scene lifecycle: run the scene script once after the
+  // player and actors exist. Scheduling a fresh context is safe even when a
+  // VM_OP_LOAD_SCENE initiated this load; the caller finishes its current
+  // context while this scene-start context begins on the next runner update.
+  if (current_scene_def->start_script != NULL) {
+    script_execute(0, (UBYTE *)current_scene_def->start_script, NULL, 0);
   }
 }
 
@@ -902,6 +977,41 @@ void vm_actor_set_hidden(uint8_t actor_index, uint8_t hidden) {
     return;
   }
   actor->hidden = hidden != 0;
+}
+
+void vm_actor_set_collisions(uint8_t actor_index, uint8_t enabled) {
+  actor_t *actor = vm_actor(actor_index);
+  if (actor == NULL) {
+    return;
+  }
+  actor->collision_enabled = enabled != 0;
+}
+
+bool vm_actor_at_position(uint8_t actor_index, uint8_t x, uint8_t y) {
+  const actor_t *actor = vm_actor(actor_index);
+  return actor != NULL && actor->x == x && actor->y == y;
+}
+
+bool vm_actor_is_relative(uint8_t actor_index, uint8_t other_actor_index,
+                          uint8_t direction) {
+  const actor_t *actor = vm_actor(actor_index);
+  const actor_t *other = vm_actor(other_actor_index);
+  if (actor == NULL || other == NULL) {
+    return false;
+  }
+
+  switch (direction) {
+  case 0: // down / below
+    return actor->y > other->y;
+  case 1: // left
+    return actor->x < other->x;
+  case 2: // right
+    return actor->x > other->x;
+  case 3: // up / above
+    return actor->y < other->y;
+  default:
+    return false;
+  }
 }
 
 actor_t *spawn_actor(uint8_t sprite_index, uint16_t x, uint16_t y) {

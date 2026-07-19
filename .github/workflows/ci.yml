@@ -33,23 +33,26 @@ jobs:
   # cover — register layout, linker script, ABI, etc.
   e2e-rom-smoke:
     name: E2E ROM smoke
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    container: devkitpro/devkitarm@sha256:15b79ce75822c289538d8153da5fa7aafe5e6adc32ad8a575a197beca0f0761b
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install devkitPro GBA toolchain
+      - name: Trust checked-out workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install mGBA
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ca-certificates apt-transport-https
-          echo 'deb [trusted=yes] https://apt.devkitpro.org stable main' \
-            | sudo tee /etc/apt/sources.list.d/devkitpro.list
-          sudo apt-get update
-          sudo apt-get install -y devkitpro-pacman
-          sudo dkp-pacman -Sy --needed --noconfirm gba-dev
-          echo "DEVKITPRO=/opt/devkitpro" >> "$GITHUB_ENV"
-          echo "DEVKITARM=/opt/devkitpro/devkitARM" >> "$GITHUB_ENV"
-          echo "/opt/devkitpro/devkitARM/bin" >> "$GITHUB_PATH"
+          apt-get update
+          apt-get install -y --no-install-recommends mgba-sdl
+          test -x /usr/games/mgba
+
+      - name: Verify pinned devkitPro GBA toolchain
+        run: |
+          test "$DEVKITPRO" = "/opt/devkitpro"
+          test "$DEVKITARM" = "/opt/devkitpro/devkitARM"
+          "$DEVKITARM/bin/arm-none-eabi-gcc" --version
+          test -x "$DEVKITPRO/tools/bin/gbafix"
 
       - name: Build .gba ROM
         run: make
@@ -64,6 +67,12 @@ jobs:
           size=$(stat -c%s bin/game.gba)
           echo "ROM size: $size bytes"
           test "$size" -ge 192
+
+      - name: Boot ROM in mGBA
+        env:
+          GBA_ENGINE_EMULATOR: /usr/games/mgba
+          GBA_ENGINE_EMULATOR_TIMEOUT_SECS: 5
+        run: make test-e2e
 
       - name: Upload ROM artifact
         uses: actions/upload-artifact@v4

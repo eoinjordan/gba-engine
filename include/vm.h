@@ -105,6 +105,18 @@ typedef uint16_t UINT16;
 // actor, hidden — show (0) or hide (1) an actor.
 #define VM_OP_ACTOR_SET_HIDDEN 0x14
 
+// actor, enabled -- enable (1) or disable (0) collision checks for an actor.
+#define VM_OP_ACTOR_SET_COLLISIONS 0x15
+
+// actor, x, y, offset -- branch when the actor is exactly at the supplied
+// runtime position. Coordinates are tile units for isometric scenes and pixel
+// units for all other scene types.
+#define VM_OP_IF_ACTOR_AT_POS 0x16
+
+// actor, other_actor, dir, offset -- branch when actor is on the requested
+// side of other_actor. Direction uses GB Studio order (down, left, right, up).
+#define VM_OP_IF_ACTOR_RELATIVE 0x17
+
 extern INT16 vm_variables[VM_VARIABLE_COUNT];
 
 // Reseed the script RNG (VM_OP_RANDOM). The engine should call this from

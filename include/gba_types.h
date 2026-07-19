@@ -71,7 +71,7 @@ typedef struct actor_t
     uint8_t sprite_index;
     uint8_t palette_index;
     // Facing direction (GB Studio direction_e: 0=down,1=left,2=right,3=up).
-    // Set by VM_OP_ACTOR_SET_DIR; reserved for directional animation.
+    // Set by movement or VM_OP_ACTOR_SET_DIR and used for animation selection.
     uint8_t dir;
     uint16_t x;
     uint16_t y;

@@ -68,6 +68,7 @@ clean:
 # ---------------------------------------------------------------------------
 HOST_CC ?= gcc
 HOST_CFLAGS := -std=c11 -Wall -Wextra -Itests -I$(INCDIR)
+HOST_INTEGRATION_CFLAGS := $(HOST_CFLAGS) -DGBA_SYSTEM_H -include tests/gba_system.h
 TEST_BIN := $(BINDIR)/test_runner
 TEST_SOURCES := tests/test_vm.c tests/test_stubs.c $(SRCDIR)/vm.c $(SRCDIR)/camera.c $(SRCDIR)/collision.c $(SRCDIR)/text.c $(SRCDIR)/savegame.c $(SRCDIR)/movement.c $(SRCDIR)/trigger.c
 INTEGRATION_TEST_BIN := $(BINDIR)/test_engine_integration
@@ -87,7 +88,7 @@ test-unit: | $(BINDIR)
 	$(TEST_BIN)
 
 test-integration: | $(BINDIR)
-	$(HOST_CC) $(HOST_CFLAGS) $(INTEGRATION_TEST_SOURCES) -o $(INTEGRATION_TEST_BIN)
+	$(HOST_CC) $(HOST_INTEGRATION_CFLAGS) $(INTEGRATION_TEST_SOURCES) -o $(INTEGRATION_TEST_BIN)
 	$(INTEGRATION_TEST_BIN)
 
 test-e2e: $(BINDIR)/game.gba
