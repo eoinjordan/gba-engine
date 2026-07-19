@@ -26,12 +26,27 @@ typedef struct gba_metasprite_tile_t {
   bool vflip;
 } gba_metasprite_tile_t;
 
+// An inclusive range of frame indices in a sprite's frames table.
+typedef struct gba_sprite_anim_t {
+  uint8_t start;
+  uint8_t end;
+} gba_sprite_anim_t;
+
 typedef struct gba_sprite_def_t {
   uint16_t tileset_len;
   const uint8_t *tileset;
   uint16_t tile_count;
+  // Default/fallback frame. This remains valid for single-frame sprites and
+  // callers that do not provide the optional animation metadata below.
   uint8_t metasprite_len;
   const gba_metasprite_tile_t *metasprite;
+  // Optional animation metadata. Zero/NULL values preserve the legacy
+  // single-frame behavior until the renderer opts into animated frames.
+  uint8_t frame_count;
+  const gba_metasprite_tile_t *const *frames;
+  const uint8_t *frame_lengths;
+  uint8_t anim_count;
+  const gba_sprite_anim_t *animations;
 } gba_sprite_def_t;
 
 typedef struct gba_actor_def_t {
