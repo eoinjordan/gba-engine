@@ -140,8 +140,9 @@ static const gba_scene_def_t test_scene2 = {
     .triggers      = test_scene2_triggers,
 };
 
-// Eight one-tile frames in compiler animation order:
-// down, right, up, left, then the four moving variants.
+// Eight one-tile frames in compiler animation order: down, right, up, left,
+// then the four moving variants. Studio's iso_movement compiler gives those
+// same runtime slots the projected meanings SW, SE, NE, NW.
 static const uint8_t scene3_sprite_tileset[8 * 32] = {0};
 static const gba_metasprite_tile_t scene3_frame0[] = {{0, 0, 0, 0, false, false}};
 static const gba_metasprite_tile_t scene3_frame1[] = {{0, 0, 1, 0, false, false}};

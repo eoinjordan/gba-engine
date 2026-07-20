@@ -815,12 +815,14 @@ void engine_update(void) {
       // Isometric sprite slots describe projected diagonals. Map logical-grid
       // movement to the GB Studio direction value whose compiled animation
       // faces that projected direction:
-      //   tile_y-- NE => right, tile_y++ SW => up,
-      //   tile_x-- NW => down,  tile_x++ SE => left.
-      if (actor->vel_y < 0) actor->dir = 2;       // NE
-      else if (actor->vel_y > 0) actor->dir = 3;  // SW
-      else if (actor->vel_x < 0) actor->dir = 0;  // NW
-      else if (actor->vel_x > 0) actor->dir = 1;  // SE
+      //   tile_y-- NE => up,   tile_y++ SW => down,
+      //   tile_x-- NW => left, tile_x++ SE => right.
+      // Studio emits isometric animations in runtime table order
+      // [SW, SE, NE, NW], matching [down, right, up, left].
+      if (actor->vel_y < 0) actor->dir = 3;       // NE / up
+      else if (actor->vel_y > 0) actor->dir = 0;  // SW / down
+      else if (actor->vel_x < 0) actor->dir = 1;  // NW / left
+      else if (actor->vel_x > 0) actor->dir = 2;  // SE / right
     } else if (actor->vel_y > 0) {
       actor->dir = 0; // down
     } else if (actor->vel_x < 0) {

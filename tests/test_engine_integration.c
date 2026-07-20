@@ -17,6 +17,19 @@ static uint16_t oam_attr0(unsigned index) { return test_mem_oam[index * 4u]; }
 static uint16_t oam_attr1(unsigned index) { return test_mem_oam[index * 4u + 1u]; }
 static uint16_t oam_attr2(unsigned index) { return test_mem_oam[index * 4u + 2u]; }
 
+// Studio compiles iso_movement animation slots into the engine's standard
+// down/right/up/left table as SW, SE, NE, NW, followed by moving variants.
+enum {
+  STUDIO_ISO_IDLE_SW = 0,
+  STUDIO_ISO_IDLE_SE = 1,
+  STUDIO_ISO_IDLE_NE = 2,
+  STUDIO_ISO_IDLE_NW = 3,
+  STUDIO_ISO_MOVING_SW = 4,
+  STUDIO_ISO_MOVING_SE = 5,
+  STUDIO_ISO_MOVING_NE = 6,
+  STUDIO_ISO_MOVING_NW = 7,
+};
+
 static void reset_engine(void) {
   test_reset_environment();
   engine_init();
@@ -395,7 +408,7 @@ TEST(isometric_input_steps_once_then_repeats_without_skipping_cells) {
   engine_update();
   ASSERT_TRUE(vm_actor_at_position(0, 3, 2));
   // tile_y-- projects NE and selects the moving-NE compiled animation slot.
-  ASSERT_EQ(oam_attr2(0) & 0x03FFu, 5);
+  ASSERT_EQ(oam_attr2(0) & 0x03FFu, STUDIO_ISO_MOVING_NE);
 
   for (uint8_t frame = 0; frame < 5; frame++) {
     engine_update();
@@ -410,7 +423,37 @@ TEST(isometric_input_steps_once_then_repeats_without_skipping_cells) {
   engine_update();
   ASSERT_TRUE(vm_actor_at_position(0, 2, 1));
   // tile_x-- projects NW and selects the moving-NW compiled animation slot.
-  ASSERT_EQ(oam_attr2(0) & 0x03FFu, 4);
+  ASSERT_EQ(oam_attr2(0) & 0x03FFu, STUDIO_ISO_MOVING_NW);
+}
+
+TEST(isometric_movement_selects_all_studio_compiled_direction_slots) {
+  reset_engine();
+  engine_update();
+  load_scene(5);
+  for (uint8_t actor = 1; actor <= 4; actor++) {
+    vm_actor_set_hidden(actor, 1);
+  }
+  vm_actor_set_position(0, 3, 4);
+
+  test_set_keys(KEY_UP);
+  engine_update();
+  ASSERT_TRUE(vm_actor_at_position(0, 3, 3));
+  ASSERT_EQ(oam_attr2(0) & 0x03FFu, STUDIO_ISO_MOVING_NE);
+
+  test_set_keys(KEY_DOWN);
+  engine_update();
+  ASSERT_TRUE(vm_actor_at_position(0, 3, 4));
+  ASSERT_EQ(oam_attr2(0) & 0x03FFu, STUDIO_ISO_MOVING_SW);
+
+  test_set_keys(KEY_LEFT);
+  engine_update();
+  ASSERT_TRUE(vm_actor_at_position(0, 2, 4));
+  ASSERT_EQ(oam_attr2(0) & 0x03FFu, STUDIO_ISO_MOVING_NW);
+
+  test_set_keys(KEY_RIGHT);
+  engine_update();
+  ASSERT_TRUE(vm_actor_at_position(0, 3, 4));
+  ASSERT_EQ(oam_attr2(0) & 0x03FFu, STUDIO_ISO_MOVING_SE);
 }
 
 TEST(isometric_collision_blocks_each_grid_step_and_map_edges) {
@@ -530,6 +573,7 @@ int main(void) {
   RUN_TEST(isometric_metasprites_accumulate_deltas_use_8x16_oam_and_anchor_feet);
   RUN_TEST(isometric_depth_emits_nearest_actor_first_and_applies_height);
   RUN_TEST(isometric_input_steps_once_then_repeats_without_skipping_cells);
+  RUN_TEST(isometric_movement_selects_all_studio_compiled_direction_slots);
   RUN_TEST(isometric_collision_blocks_each_grid_step_and_map_edges);
   RUN_TEST(isometric_interaction_requires_cardinal_adjacency);
   RUN_TEST(isometric_triggers_fire_on_entry_and_can_transition_to_topdown);
