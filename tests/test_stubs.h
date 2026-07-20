@@ -13,6 +13,10 @@
 
 extern int stub_scene_load_calls;
 extern uint8_t stub_last_scene_index;
+extern int stub_scene_load_at_calls;
+extern uint8_t stub_last_scene_x;
+extern uint8_t stub_last_scene_y;
+extern uint8_t stub_last_scene_direction;
 
 extern int stub_scene_tone_calls;
 extern uint8_t stub_last_scene_tone;

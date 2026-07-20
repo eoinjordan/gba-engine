@@ -3,6 +3,10 @@
 
 int stub_scene_load_calls = 0;
 uint8_t stub_last_scene_index = 0;
+int stub_scene_load_at_calls = 0;
+uint8_t stub_last_scene_x = 0;
+uint8_t stub_last_scene_y = 0;
+uint8_t stub_last_scene_direction = 0;
 
 int stub_scene_tone_calls = 0;
 uint8_t stub_last_scene_tone = 0;
@@ -35,6 +39,10 @@ uint8_t stub_last_actor_relation = 0;
 void stub_reset(void) {
   stub_scene_load_calls = 0;
   stub_last_scene_index = 0;
+  stub_scene_load_at_calls = 0;
+  stub_last_scene_x = 0;
+  stub_last_scene_y = 0;
+  stub_last_scene_direction = 0;
   stub_scene_tone_calls = 0;
   stub_last_scene_tone = 0;
   stub_textbox_open_calls = 0;
@@ -69,6 +77,15 @@ void stub_reset(void) {
 void vm_scene_load(uint8_t scene_index) {
   stub_scene_load_calls++;
   stub_last_scene_index = scene_index;
+}
+
+void vm_scene_load_at(uint8_t scene_index, uint8_t x, uint8_t y,
+                      uint8_t direction) {
+  stub_scene_load_at_calls++;
+  stub_last_scene_index = scene_index;
+  stub_last_scene_x = x;
+  stub_last_scene_y = y;
+  stub_last_scene_direction = direction;
 }
 
 void vm_scene_set_tone(uint8_t tone) {

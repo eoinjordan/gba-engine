@@ -13,6 +13,10 @@ static uint16_t *charblock(unsigned block) {
   return &test_mem_vram[(block * 0x4000u) / sizeof(uint16_t)];
 }
 
+static uint16_t oam_attr0(unsigned index) { return test_mem_oam[index * 4u]; }
+static uint16_t oam_attr1(unsigned index) { return test_mem_oam[index * 4u + 1u]; }
+static uint16_t oam_attr2(unsigned index) { return test_mem_oam[index * 4u + 2u]; }
+
 static void reset_engine(void) {
   test_reset_environment();
   engine_init();
@@ -291,6 +295,223 @@ TEST(actor_vm_queries_and_collision_toggle_use_live_runtime_state) {
   ASSERT_TRUE(other->collision_enabled);
 }
 
+TEST(isometric_scene_uses_independent_background_stride_and_centred_projection) {
+  reset_engine();
+  engine_update(); // Drain bootstrap before explicitly loading scene 5.
+  load_scene(5);
+
+  uint16_t *map = screenblock(28);
+  ASSERT_EQ(map[0], 1);
+  ASSERT_EQ(map[29], 2);
+  ASSERT_EQ(map[32], 3); // Source row 1 starts at index 30, not logical width 8.
+
+  // Isolate the player, then place it at the demo's (4,5) start cell.
+  for (uint8_t actor = 1; actor <= 4; actor++) {
+    vm_actor_set_hidden(actor, 1);
+  }
+  vm_actor_set_position(0, 4, 5);
+  engine_update();
+
+  // 8x7 at 32x16 projects to 240x120 and is vertically centred in the
+  // 240x160 background. The 8x8 test player is bottom-centred on the tile.
+  ASSERT_EQ(test_reg_bg0hofs, 0);
+  ASSERT_EQ(test_reg_bg0vofs, 0);
+  ASSERT_EQ(oam_attr1(0) & 0x01FFu, 92);
+  ASSERT_EQ(oam_attr0(0) & 0x00FFu, 92);
+}
+
+TEST(isometric_camera_scrolls_background_and_projected_actor_together) {
+  reset_engine();
+  engine_update();
+  load_scene(6);
+  vm_actor_set_position(0, 7, 0);
+  engine_update();
+
+  // The 8x8 diamond/background are 256px wide, so the rightmost player cell
+  // clamps the 240px viewport to the shared 16px maximum scroll.
+  ASSERT_EQ(test_reg_bg0hofs, 16);
+  ASSERT_EQ(test_reg_bg0vofs, 0);
+  ASSERT_EQ(oam_attr1(0) & 0x01FFu, 220);
+  ASSERT_EQ(oam_attr0(0) & 0x00FFu, 72);
+}
+
+TEST(isometric_metasprites_accumulate_deltas_use_8x16_oam_and_anchor_feet) {
+  reset_engine();
+  engine_update();
+  load_scene(5);
+
+  // Runtime actor 3 uses the two-object 16x16 fixture at logical cell (3,3).
+  vm_actor_set_hidden(0, 1);
+  vm_actor_set_hidden(1, 1);
+  vm_actor_set_hidden(2, 1);
+  vm_actor_set_hidden(4, 1);
+  engine_update();
+
+  // Compiler deltas +8,-8 accumulate to x=8,0. The frame is centred at
+  // projected x=112 and its bottom lands on the tile centre at y=76.
+  ASSERT_EQ(oam_attr1(0) & 0x01FFu, 112);
+  ASSERT_EQ(oam_attr1(1) & 0x01FFu, 104);
+  ASSERT_EQ(oam_attr0(0) & 0x00FFu, 60);
+  ASSERT_EQ(oam_attr0(1) & 0x00FFu, 60);
+  ASSERT_EQ(oam_attr0(0) & 0xC000u, 0x8000u); // vertical size-0 = 8x16
+  ASSERT_EQ(oam_attr0(1) & 0xC000u, 0x8000u);
+  ASSERT_EQ(oam_attr2(0) & 0x03FFu, 8);
+  ASSERT_EQ(oam_attr2(1) & 0x03FFu, 10);
+}
+
+TEST(isometric_depth_emits_nearest_actor_first_and_applies_height) {
+  reset_engine();
+  engine_update();
+  load_scene(5);
+
+  // Keep actors at depth 10 and 11 only. Lower OAM index wins sprite overlap,
+  // so depth 11 must be emitted first.
+  vm_actor_set_hidden(0, 1);
+  vm_actor_set_hidden(3, 1);
+  vm_actor_set_hidden(4, 1);
+  engine_update();
+  ASSERT_EQ(oam_attr2(0) & 0x03FFu, 1); // actor (6,5), direction right
+  ASSERT_EQ(oam_attr2(1) & 0x03FFu, 3); // actor (5,5), direction left
+
+  // iso_z=1 raises actor 4 by one projected tile height.
+  vm_actor_set_hidden(1, 1);
+  vm_actor_set_hidden(2, 1);
+  vm_actor_set_hidden(4, 0);
+  engine_update();
+  ASSERT_EQ(oam_attr1(0) & 0x01FFu, 108);
+  ASSERT_EQ(oam_attr0(0) & 0x00FFu, 36);
+}
+
+TEST(isometric_input_steps_once_then_repeats_without_skipping_cells) {
+  reset_engine();
+  engine_update();
+  load_scene(5);
+  for (uint8_t actor = 1; actor <= 4; actor++) {
+    vm_actor_set_hidden(actor, 1);
+  }
+  vm_actor_set_position(0, 3, 3);
+
+  test_set_keys(KEY_UP);
+  engine_update();
+  ASSERT_TRUE(vm_actor_at_position(0, 3, 2));
+  // tile_y-- projects NE and selects the moving-NE compiled animation slot.
+  ASSERT_EQ(oam_attr2(0) & 0x03FFu, 5);
+
+  for (uint8_t frame = 0; frame < 5; frame++) {
+    engine_update();
+    ASSERT_TRUE(vm_actor_at_position(0, 3, 2));
+  }
+  engine_update();
+  ASSERT_TRUE(vm_actor_at_position(0, 3, 1));
+
+  test_set_keys(0);
+  engine_update();
+  test_set_keys(KEY_LEFT);
+  engine_update();
+  ASSERT_TRUE(vm_actor_at_position(0, 2, 1));
+  // tile_x-- projects NW and selects the moving-NW compiled animation slot.
+  ASSERT_EQ(oam_attr2(0) & 0x03FFu, 4);
+}
+
+TEST(isometric_collision_blocks_each_grid_step_and_map_edges) {
+  reset_engine();
+  engine_update();
+  load_scene(5);
+
+  // A scripted/non-player velocity larger than one must still stop on the
+  // intermediate wall instead of tunnelling from x=2 to x=5.
+  actor_t *runner = spawn_actor(0, 2, 3);
+  ASSERT_NOT_NULL(runner);
+  runner->vel_x = 3;
+  runner->vel_y = 0;
+  engine_update();
+  ASSERT_EQ(runner->x, 3);
+  ASSERT_EQ(runner->y, 3);
+
+  vm_actor_set_position(0, 3, 3);
+
+  // Logical cell (4,3) is solid.
+  test_set_keys(KEY_RIGHT);
+  engine_update();
+  ASSERT_TRUE(vm_actor_at_position(0, 3, 3));
+
+  test_set_keys(0);
+  engine_update();
+  vm_actor_set_position(0, 0, 0);
+  test_set_keys(KEY_LEFT);
+  engine_update();
+  ASSERT_TRUE(vm_actor_at_position(0, 0, 0));
+}
+
+TEST(isometric_interaction_requires_cardinal_adjacency) {
+  reset_engine();
+  engine_update();
+  load_scene(5);
+
+  // (4,4) is diagonally adjacent to actor (5,5), not cardinally adjacent.
+  vm_actor_set_position(0, 4, 4);
+  test_set_keys(KEY_A);
+  engine_update();
+  test_set_keys(0);
+  engine_update();
+  ASSERT_EQ(test_mem_palette[0], RGB15(1, 3, 4));
+
+  // From (4,5), actor (5,5) is exactly one grid edge away. Its tone-1 script
+  // must win; the tone-2 actor at (6,5) is two cells away.
+  vm_actor_set_position(0, 4, 5);
+  test_set_keys(KEY_A);
+  engine_update();
+  test_set_keys(0);
+  engine_update();
+  ASSERT_EQ(test_mem_palette[0], RGB15(2, 5, 8));
+}
+
+TEST(isometric_triggers_fire_on_entry_and_can_transition_to_topdown) {
+  reset_engine();
+  engine_update();
+  load_scene(5);
+  vm_actor_set_position(0, 3, 3);
+
+  // Step onto trigger (3,2), then allow its queued script to run.
+  test_set_keys(KEY_UP);
+  engine_update();
+  test_set_keys(0);
+  engine_update();
+  ASSERT_EQ(test_mem_palette[0], RGB15(4, 1, 5));
+
+  load_scene(5);
+  vm_actor_set_position(0, 7, 5);
+  test_set_keys(KEY_DOWN);
+  engine_update();
+  ASSERT_TRUE(vm_actor_at_position(0, 7, 6));
+  test_set_keys(0);
+  engine_update(); // Trigger script loads top-down scene 3.
+
+  // Top-down destination operands are tile coordinates and become pixels.
+  ASSERT_TRUE(vm_actor_at_position(0, 16, 24));
+  ASSERT_EQ(test_reg_bg0hofs, 0);
+  ASSERT_EQ(test_reg_bg0vofs, 0);
+  ASSERT_EQ(oam_attr1(0) & 0x01FFu, 16);
+  ASSERT_EQ(oam_attr0(0) & 0x00FFu, 24);
+  ASSERT_EQ(oam_attr2(0) & 0x03FFu, 1); // direction right
+}
+
+TEST(scene_load_at_keeps_isometric_destination_in_grid_units) {
+  reset_engine();
+  engine_update();
+
+  vm_scene_load_at(5, 4, 5, 1);
+  ASSERT_TRUE(vm_actor_at_position(0, 4, 5));
+  for (uint8_t actor = 1; actor <= 4; actor++) {
+    vm_actor_set_hidden(actor, 1);
+  }
+  engine_update();
+
+  ASSERT_EQ(oam_attr1(0) & 0x01FFu, 92);
+  ASSERT_EQ(oam_attr0(0) & 0x00FFu, 92);
+  ASSERT_EQ(oam_attr2(0) & 0x03FFu, 3); // direction left
+}
+
 int main(void) {
   RUN_TEST(engine_init_schedules_bootstrap_and_enables_bg0);
   RUN_TEST(load_scene_renders_compiled_tilemap_and_tileset);
@@ -304,5 +525,14 @@ int main(void) {
   RUN_TEST(scene_trigger_runs_its_script_once_when_the_player_enters);
   RUN_TEST(animated_sprites_select_idle_and_moving_frames_by_direction);
   RUN_TEST(actor_vm_queries_and_collision_toggle_use_live_runtime_state);
+  RUN_TEST(isometric_scene_uses_independent_background_stride_and_centred_projection);
+  RUN_TEST(isometric_camera_scrolls_background_and_projected_actor_together);
+  RUN_TEST(isometric_metasprites_accumulate_deltas_use_8x16_oam_and_anchor_feet);
+  RUN_TEST(isometric_depth_emits_nearest_actor_first_and_applies_height);
+  RUN_TEST(isometric_input_steps_once_then_repeats_without_skipping_cells);
+  RUN_TEST(isometric_collision_blocks_each_grid_step_and_map_edges);
+  RUN_TEST(isometric_interaction_requires_cardinal_adjacency);
+  RUN_TEST(isometric_triggers_fire_on_entry_and_can_transition_to_topdown);
+  RUN_TEST(scene_load_at_keeps_isometric_destination_in_grid_units);
   return TEST_REPORT();
 }

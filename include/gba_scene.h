@@ -18,6 +18,9 @@ typedef struct gba_trigger_def_t {
 } gba_trigger_def_t;
 
 typedef struct gba_metasprite_tile_t {
+  // Relative delta from the previous object in this metasprite. GB Studio's
+  // sprite compiler emits objects in OAM order using this compact format;
+  // the renderer accumulates the deltas to recover each object's position.
   int8_t x;
   int8_t y;
   uint16_t tile_index;
@@ -47,6 +50,11 @@ typedef struct gba_sprite_def_t {
   const uint8_t *frame_lengths;
   uint8_t anim_count;
   const gba_sprite_anim_t *animations;
+  // Object dimensions used by every entry in this sprite's metasprites.
+  // GBA Studio currently compiles either 8x8 or 8x16 objects. Keeping this
+  // explicit lets the renderer set the correct GBA OAM shape bits and anchor
+  // an isometric actor by the real bounds of its current frame.
+  bool obj_8x16;
 } gba_sprite_def_t;
 
 typedef struct gba_actor_def_t {
@@ -61,6 +69,8 @@ typedef struct gba_actor_def_t {
   bool pinned;
   bool hidden;
   const uint8_t *interact_script;
+  // Isometric height layer. Ignored by non-isometric scene types.
+  int8_t iso_z;
 } gba_actor_def_t;
 
 typedef struct gba_scene_def_t {
@@ -84,6 +94,11 @@ typedef struct gba_scene_def_t {
   // Optional scene-start script. Scheduled after the player and scene actors
   // have spawned so actor opcodes can safely target their runtime indices.
   const uint8_t *start_script;
+  // Dimensions of the compiled background tilemap. These differ from the
+  // logical collision-grid dimensions for isometric scenes. Zero preserves
+  // the legacy contract and falls back to width/height.
+  uint8_t background_width;
+  uint8_t background_height;
 } gba_scene_def_t;
 
 // Scene type identifiers (must match compileData.ts sceneTypeIds)

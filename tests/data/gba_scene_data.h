@@ -194,12 +194,158 @@ static const gba_scene_def_t test_scene4 = {
     .actors        = scene4_actors,
 };
 
+// Isometric integration scene. Its logical 8x7 collision grid is deliberately
+// different from its 30x20 (240x160) compiled background so the runtime must
+// honour the two independent coordinate spaces.
+static const uint8_t iso_scene_collisions[8 * 7] = {
+    [3 * 8 + 4] = 1,
+};
+
+static const uint8_t iso_scene_tilemap[30 * 20] = {
+    [0] = 1,
+    [29] = 2,
+    [30] = 3,
+    [30 * 19 + 29] = 1,
+};
+
+static const uint8_t iso_near_interact_script[] = {
+    VM_OP_SET_SCENE_TONE, 1,
+    VM_OP_END,
+};
+
+static const uint8_t iso_far_interact_script[] = {
+    VM_OP_SET_SCENE_TONE, 2,
+    VM_OP_END,
+};
+
+static const uint8_t iso_trigger_script[] = {
+    VM_OP_SET_SCENE_TONE, 3,
+    VM_OP_END,
+};
+
+static const uint8_t iso_transition_script[] = {
+    VM_OP_LOAD_SCENE_AT, 3, 2, 3, 2,
+    VM_OP_END,
+};
+
+// A 16x16 frame made from two 8x16 objects. Positions are compiler-format
+// deltas: +8 followed by -8 accumulates to absolute x positions 8 then 0.
+static const uint8_t iso_tall_sprite_tileset[4 * 32] = {0};
+static const gba_metasprite_tile_t iso_tall_metasprite[] = {
+    {8, 0, 0, 0, false, false},
+    {-8, 0, 2, 0, false, false},
+};
+static const gba_sprite_def_t iso_tall_sprite = {
+    .tileset_len    = sizeof(iso_tall_sprite_tileset),
+    .tileset        = iso_tall_sprite_tileset,
+    .tile_count     = 4,
+    .metasprite_len = 2,
+    .metasprite     = iso_tall_metasprite,
+    .obj_8x16       = true,
+};
+
+static const gba_actor_def_t iso_scene_actors[] = {
+    {
+        .x = 5,
+        .y = 5,
+        .sprite_index = 0,
+        .direction = 1,
+        .move_speed = 1,
+        .collision_enabled = true,
+        .interact_script = iso_near_interact_script,
+    },
+    {
+        .x = 6,
+        .y = 5,
+        .sprite_index = 0,
+        .direction = 2,
+        .move_speed = 1,
+        .collision_enabled = true,
+        .interact_script = iso_far_interact_script,
+    },
+    {
+        .x = 3,
+        .y = 3,
+        .sprite_index = 1,
+        .direction = 0,
+        .move_speed = 1,
+        .collision_enabled = true,
+    },
+    {
+        .x = 2,
+        .y = 2,
+        .sprite_index = 0,
+        .direction = 0,
+        .move_speed = 1,
+        .collision_enabled = true,
+        .iso_z = 1,
+    },
+};
+
+static const gba_trigger_def_t iso_scene_triggers[] = {
+    {.x = 3, .y = 2, .w = 1, .h = 1, .script = iso_trigger_script},
+    {.x = 7, .y = 6, .w = 1, .h = 1, .script = iso_transition_script},
+};
+
+static const gba_sprite_def_t *const iso_scene_sprites[] = {
+    &scene3_sprite,
+    &iso_tall_sprite,
+};
+
+static const gba_iso_scene_def_t test_scene5 = {
+    .base = {
+        .width               = 8,
+        .height              = 7,
+        .type                = SCENE_TYPE_ISOMETRIC,
+        .player_sprite_index = 0,
+        .actor_count         = 4,
+        .trigger_count       = 2,
+        .tileset_len         = sizeof(scene0_tileset),
+        .tileset             = scene0_tileset,
+        .tilemap             = iso_scene_tilemap,
+        .collisions          = iso_scene_collisions,
+        .actors              = iso_scene_actors,
+        .sprite_count        = 2,
+        .sprites             = iso_scene_sprites,
+        .triggers            = iso_scene_triggers,
+        .background_width    = 30,
+        .background_height   = 20,
+    },
+    .iso_tile_w = 32,
+    .iso_tile_h = 16,
+};
+
+// A projected world one hardware tile wider than the viewport, used to prove
+// that camera scroll and actor projection remain in the same coordinate space.
+static const uint8_t iso_large_collisions[8 * 8] = {0};
+static const uint8_t iso_large_tilemap[32 * 20] = {0};
+static const gba_iso_scene_def_t test_scene6 = {
+    .base = {
+        .width               = 8,
+        .height              = 8,
+        .type                = SCENE_TYPE_ISOMETRIC,
+        .player_sprite_index = 0,
+        .tileset_len         = sizeof(scene0_tileset),
+        .tileset             = scene0_tileset,
+        .tilemap             = iso_large_tilemap,
+        .collisions          = iso_large_collisions,
+        .sprite_count        = 1,
+        .sprites             = scene3_sprites,
+        .background_width    = 32,
+        .background_height   = 20,
+    },
+    .iso_tile_w = 32,
+    .iso_tile_h = 16,
+};
+
 static const gba_scene_def_t *const test_scenes[] = {
     &test_scene0,
     &test_scene1,
     &test_scene2,
     &test_scene3,
     &test_scene4,
+    (const gba_scene_def_t *)&test_scene5,
+    (const gba_scene_def_t *)&test_scene6,
 };
 
 static const uint8_t test_bootstrap_script[] = {
@@ -208,7 +354,7 @@ static const uint8_t test_bootstrap_script[] = {
 };
 
 static const gba_game_data_t gba_game_data = {
-    .scene_count       = 5,
+    .scene_count       = 7,
     .start_scene_index = 0,
     .start_x           = 0,
     .start_y           = 0,
