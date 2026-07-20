@@ -289,6 +289,18 @@ TEST(animated_sprites_select_idle_and_moving_frames_by_direction) {
   ASSERT_EQ(test_mem_oam[2] & 0x03FFu, 5);
 }
 
+TEST(sprite_tiles_copy_to_obj_vram_as_gba_safe_halfwords) {
+  reset_engine();
+  engine_update();
+  load_scene(3);
+
+  // OBJ VRAM begins at byte offset 0x10000 in test_mem_vram. These values
+  // prove adjacent source bytes remain distinct rather than an 8-bit VRAM
+  // write mirroring the second byte across each halfword.
+  ASSERT_EQ(test_mem_vram[0x10000u / 2u], 0x3412u);
+  ASSERT_EQ(test_mem_vram[0x10000u / 2u + 1u], 0x7856u);
+}
+
 TEST(actor_vm_queries_and_collision_toggle_use_live_runtime_state) {
   reset_engine();
   engine_update(); // Drain bootstrap and spawn the scene player.
@@ -567,6 +579,7 @@ int main(void) {
   RUN_TEST(movement_type_follow_chases_the_player_only_within_range);
   RUN_TEST(scene_trigger_runs_its_script_once_when_the_player_enters);
   RUN_TEST(animated_sprites_select_idle_and_moving_frames_by_direction);
+  RUN_TEST(sprite_tiles_copy_to_obj_vram_as_gba_safe_halfwords);
   RUN_TEST(actor_vm_queries_and_collision_toggle_use_live_runtime_state);
   RUN_TEST(isometric_scene_uses_independent_background_stride_and_centred_projection);
   RUN_TEST(isometric_camera_scrolls_background_and_projected_actor_together);
