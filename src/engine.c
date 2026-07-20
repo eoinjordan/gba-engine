@@ -268,16 +268,24 @@ static void load_scene_sprite_tiles(const gba_scene_def_t *scene) {
        sprite_index < scene->sprite_count && sprite_index < MAX_SCENE_SPRITES;
        sprite_index++) {
     const gba_sprite_def_t *sprite = scene->sprites[sprite_index];
-    volatile uint8_t *obj_vram_bytes = (volatile uint8_t *)OBJ_VRAM;
-
     if (sprite == NULL || sprite->tileset == NULL || sprite->tileset_len == 0) {
       loaded_sprite_tile_bases[sprite_index] = next_tile_base;
       continue;
     }
 
     loaded_sprite_tile_bases[sprite_index] = next_tile_base;
-    for (uint16_t byte_index = 0; byte_index < sprite->tileset_len; byte_index++) {
-      obj_vram_bytes[next_tile_base * 32u + byte_index] = sprite->tileset[byte_index];
+    volatile uint16_t *obj_vram_halfwords =
+        OBJ_VRAM + next_tile_base * 16u;
+    for (uint16_t byte_index = 0; byte_index < sprite->tileset_len;
+         byte_index += 2u) {
+      // GBA VRAM does not support byte writes: an 8-bit store is mirrored
+      // across both bytes of its halfword. Pack the compiler's byte stream
+      // explicitly so object tiles retain both nibbles on hardware/emulators.
+      uint16_t packed = sprite->tileset[byte_index];
+      if (byte_index + 1u < sprite->tileset_len) {
+        packed |= (uint16_t)sprite->tileset[byte_index + 1u] << 8u;
+      }
+      obj_vram_halfwords[byte_index / 2u] = packed;
     }
     next_tile_base = (uint16_t)(next_tile_base + sprite->tile_count);
   }
