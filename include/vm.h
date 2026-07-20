@@ -117,6 +117,12 @@ typedef uint16_t UINT16;
 // side of other_actor. Direction uses GB Studio order (down, left, right, up).
 #define VM_OP_IF_ACTOR_RELATIVE 0x17
 
+// scene, x, y, direction -- load a scene and place the player at the event's
+// destination. x/y are scene tile coordinates for both top-down and
+// isometric targets; the engine converts top-down destinations to pixels.
+// VM_OP_LOAD_SCENE remains unchanged for bootstrap/legacy bytecode.
+#define VM_OP_LOAD_SCENE_AT 0x18
+
 extern INT16 vm_variables[VM_VARIABLE_COUNT];
 
 // Reseed the script RNG (VM_OP_RANDOM). The engine should call this from

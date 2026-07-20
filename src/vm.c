@@ -4,6 +4,8 @@
 #include <stddef.h>
 
 extern void vm_scene_load(UBYTE scene_index);
+extern void vm_scene_load_at(UBYTE scene_index, UBYTE x, UBYTE y,
+                             UBYTE direction);
 extern void vm_scene_set_tone(UBYTE tone);
 extern void textbox_open(const char *text);
 extern bool textbox_update(void);
@@ -207,6 +209,15 @@ UBYTE script_runner_update(void) {
       case VM_OP_LOAD_SCENE:
         vm_scene_load(*ctx->PC++);
         break;
+
+      case VM_OP_LOAD_SCENE_AT: {
+        UBYTE scene = *ctx->PC++;
+        UBYTE x = *ctx->PC++;
+        UBYTE y = *ctx->PC++;
+        UBYTE direction = *ctx->PC++;
+        vm_scene_load_at(scene, x, y, direction);
+        break;
+      }
 
       case VM_OP_SET_SCENE_TONE:
         vm_scene_set_tone(*ctx->PC++);

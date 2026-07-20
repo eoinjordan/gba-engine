@@ -68,6 +68,10 @@ typedef struct actor_t
     // patrolling horizontally, down when patrolling vertically). Not part of
     // any compiled data format — purely engine bookkeeping between frames.
     bool movement_positive    : 1;
+    // Height above the ground plane for isometric projection/depth sorting.
+    // Kept on the runtime actor so compiled actors and future VM movement can
+    // share the same render path. Ignored outside isometric scenes.
+    int8_t iso_z;
     uint8_t sprite_index;
     uint8_t palette_index;
     // Facing direction (GB Studio direction_e: 0=down,1=left,2=right,3=up).

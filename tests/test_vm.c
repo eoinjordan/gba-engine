@@ -144,6 +144,26 @@ TEST(load_scene_opcode_dispatches_to_the_engine_with_its_argument) {
   ASSERT_EQ(stub_last_scene_index, 7);
 }
 
+TEST(load_scene_at_opcode_dispatches_destination_and_consumes_all_operands) {
+  reset_vm();
+
+  static const uint8_t script[] = {
+      VM_OP_LOAD_SCENE_AT, 7, 9, 11, 2,
+      VM_OP_SET_SCENE_TONE, 3,
+      VM_OP_END,
+  };
+  script_execute(0, (uint8_t *)script, NULL, 0);
+  script_runner_update();
+
+  ASSERT_EQ(stub_scene_load_at_calls, 1);
+  ASSERT_EQ(stub_last_scene_index, 7);
+  ASSERT_EQ(stub_last_scene_x, 9);
+  ASSERT_EQ(stub_last_scene_y, 11);
+  ASSERT_EQ(stub_last_scene_direction, 2);
+  ASSERT_EQ(stub_scene_tone_calls, 1);
+  ASSERT_EQ(stub_last_scene_tone, 3);
+}
+
 TEST(set_scene_tone_opcode_dispatches_to_the_engine_with_its_argument) {
   reset_vm();
 
@@ -1242,6 +1262,7 @@ int main(void) {
 
   RUN_TEST(end_opcode_terminates_the_script_and_reports_done);
   RUN_TEST(load_scene_opcode_dispatches_to_the_engine_with_its_argument);
+  RUN_TEST(load_scene_at_opcode_dispatches_destination_and_consumes_all_operands);
   RUN_TEST(set_scene_tone_opcode_dispatches_to_the_engine_with_its_argument);
   RUN_TEST(if_input_branches_when_a_masked_key_is_held);
   RUN_TEST(if_input_does_not_branch_when_key_is_not_held);

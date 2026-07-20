@@ -40,7 +40,9 @@ engine.json  Field/metadata definitions consumed by GBA Studio's compiler
 - **`engine.{c,h}`** — Engine loop (`engine_init`/`engine_update`/`engine_render`/`engine_run`),
   Mode 0 tiled background rendering (palette + tile + tilemap loading),
   scene state, actor spawn/destroy/update, camera follow, and
-  collision-aware actor movement.
+  collision-aware actor movement. Isometric scenes use a logical diamond
+  grid independent of the compiled background dimensions, grid-paced input,
+  projected/height-aware actor anchoring, and OAM-correct depth ordering.
 - **`vm.{c,h}`** — Bytecode interpreter (`script_execute`, `script_runner_*`):
   context management/concurrency plus an opcode set covering scene loads,
   palette "tone" changes, waits, 256 signed-16-bit variables, math
@@ -95,6 +97,9 @@ underneath several of them already exists and is unit-tested (see below):
       trigger-zone records, and VM script dispatch on entry are wired
 - [x] Real background tile graphics from compiled art and camera scrolling
 - [x] Sprite rendering via OAM, including directional idle/moving animations
+- [x] Isometric runtime — projected/grid-paced movement, per-cell collision,
+      triggers and cardinal interaction, height-aware actor projection/depth,
+      independently sized backgrounds, and 8x8/8x16 metasprite rendering
 - [ ] Audio (GBA APU / DirectSound)
 - [ ] Save/load *hardware* (SRAM HAL, opcodes, menu UI) — record format
       done (`savegame.{c,h}`)
@@ -169,7 +174,10 @@ make --version
 - **Integration tests (host-side, fast).** `engine.c` is exercised on the host
   with fake VRAM/register state and synthetic compiled scene data. This covers
   scene rendering, palette changes, actor updates, and the VM-to-engine bridge
-  without needing devkitARM or an emulator.
+  without needing devkitARM or an emulator. A synthetic end-to-end isometric
+  scene additionally covers background stride, actor projection/anchoring,
+  OAM depth and shape, paced input, collisions, interactions, triggers, and a
+  transition back to a top-down scene.
 
   ```sh
   make test-integration
