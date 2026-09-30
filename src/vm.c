@@ -106,7 +106,7 @@ void script_runner_init(UBYTE reset) {
   }
 }
 
-SCRIPT_CTX *script_execute(UBYTE bank, UBYTE *pc, UWORD *handle, UBYTE nargs,
+SCRIPT_CTX *script_execute(UBYTE bank, UBYTE *pc, UWORD *handle, unsigned int nargs,
                            ...) {
   if (free_ctxs == NULL) {
     return NULL;

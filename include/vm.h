@@ -171,7 +171,7 @@ extern UBYTE vm_exception_params_bank;
 extern const void *vm_exception_params_offset;
 
 void script_runner_init(UBYTE reset);
-SCRIPT_CTX *script_execute(UBYTE bank, UBYTE *pc, UWORD *handle, UBYTE nargs,
+SCRIPT_CTX *script_execute(UBYTE bank, UBYTE *pc, UWORD *handle, unsigned int nargs,
                            ...);
 UBYTE script_terminate(UBYTE ID);
 UBYTE script_detach_hthread(UBYTE ID);
