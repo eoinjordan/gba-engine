@@ -26,12 +26,19 @@ Windows, Linux and macOS. Gowin FPGA synthesis requires Windows or Linux.
 `bin/tang-game/build.json` records the firmware hash and source hashes.
 
 The FPGA exposes the engine's palette, VRAM and OAM addresses through
-SDRAM. Mode 0 registers are local. A software renderer supports the
+SDRAM. Mode 0 registers are local. The hardware renderer supports the
 engine's 4bpp BG0 world, BG1 dialogue, tile flips, scrolling, RGB555
 palettes, and regular sprites, including 8x16 objects. Affine objects,
 8bpp tiles, blending, audio and persistent saves are not implemented.
 The framebuffer is write-only and single-buffered; tearing is possible.
-The software renderer updates more slowly than the LCD raster.
+The engine detects renderer ID `0x54475231` and starts a draw through
+`0x80000008`. It falls back to the software renderer on earlier platform
+images. During a hardware draw, the renderer owns the SDRAM bus and the
+CPU waits; palette and OAM reads use an on-chip shadow.
+
+On the Nano 20K, the Studio starter title screen measured 57.9 game frames
+per second. Its menu scenes measured about 29 fps. The LCD raster remains
+58 Hz; scenes requiring more draw/update time can repeat a displayed frame.
 
 The renderer's palette and row buffers use 2 KiB of on-chip scratch RAM.
 Code, game assets, stack, and remaining state use SDRAM. The linker reserves

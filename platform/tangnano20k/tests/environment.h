@@ -26,4 +26,6 @@ extern uint16_t test_control,test_bg0,test_bg1,test_sx0,test_sy0,test_sx1,test_s
 extern volatile uint32_t lcd_frames,game_frames;
 #define TANG_LCD_FRAME lcd_frames
 #define TANG_GAME_FRAME game_frames
+#define TANG_DRAW game_frames
+#define TANG_RENDERER lcd_frames
 void tang_render_frame(void);

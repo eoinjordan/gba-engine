@@ -94,7 +94,10 @@ void tang_render_frame(void) {
 }
 
 void tang_present(void) {
-    tang_render_frame();
+    if (TANG_RENDERER==0x54475231u) {
+        TANG_DRAW=1;
+        while (TANG_DRAW&1) {}
+    } else tang_render_frame();
     TANG_GAME_FRAME=++frames;
     uint32_t frame=TANG_LCD_FRAME;
     while (TANG_LCD_FRAME==frame) {}

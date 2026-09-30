@@ -88,6 +88,11 @@ TEST(engine_update_cycles_scenes_when_start_is_pressed) {
   ASSERT_EQ(test_mem_palette[0], RGB15(4, 1, 5));
   ASSERT_EQ(map[3 * 32 + 3], 1);
   ASSERT_EQ(map[4 * 32 + 4], 0);
+
+  // A held physical button must not cycle through another scene each frame.
+  engine_update();
+  ASSERT_EQ(test_mem_palette[0], RGB15(4, 1, 5));
+  ASSERT_EQ(map[3 * 32 + 3], 1);
 }
 
 TEST(textbox_dismiss_input_is_not_reused_for_movement_or_interaction) {

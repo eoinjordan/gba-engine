@@ -653,7 +653,7 @@ void engine_update(void) {
   scene_changed_during_update = false;
   uint16_t keys = get_keys();
   const bool gameplay_input_was_locked = textbox_is_open() || VM_ISLOCKED();
-  if (!gameplay_input_was_locked && (keys & KEY_START)) {
+  if (!gameplay_input_was_locked && key_pressed(KEY_START)) {
     load_scene((uint8_t)((current_scene_index + 1) % GBA_GAME_DATA.scene_count));
   }
 
