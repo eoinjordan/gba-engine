@@ -104,4 +104,4 @@ test-tang-renderer: | $(BINDIR)
 		-o $(BINDIR)/test_tang_renderer
 	$(BINDIR)/test_tang_renderer
 
-.PHONY: test test-unit test-integration test-e2e test-host
+.PHONY: test test-unit test-integration test-e2e test-host test-tang-renderer

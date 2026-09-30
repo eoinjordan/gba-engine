@@ -28,6 +28,9 @@ jobs:
       - name: Run host-side integration tests
         run: make test-integration HOST_CC=gcc
 
+      - name: Test Tang software renderer
+        run: make test-tang-renderer HOST_CC=gcc
+
   # Build an actual .gba ROM with devkitARM to make sure the engine still
   # compiles and links for the real target. This is the part unit tests can't
   # cover — register layout, linker script, ABI, etc.
