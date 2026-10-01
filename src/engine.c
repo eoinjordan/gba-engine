@@ -496,6 +496,8 @@ static void render_scene_actors(void) {
         oam[1] |= 0x2000u;
       }
       oam[2] = (uint16_t)((tile_base + tile->tile_index) & 0x03FFu);
+      // Priority 1 keeps objects above the world and below the priority-0 textbox.
+      oam[2] |= 0x0400u;
       oam[2] |= (uint16_t)((tile->palette_bank & 0x0Fu) << 12);
       oam[3] = 0u;
       oam_index++;

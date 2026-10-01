@@ -282,6 +282,7 @@ TEST(animated_sprites_select_idle_and_moving_frames_by_direction) {
   // The player starts facing down (direction 0), selecting idle frame 0.
   engine_update();
   ASSERT_EQ(test_mem_oam[2] & 0x03FFu, 0);
+  ASSERT_EQ((test_mem_oam[2] >> 10) & 3u, 1);
 
   // GB Studio direction 1 is left, which maps to compiler animation slot 3.
   vm_actor_set_direction(0, 1);

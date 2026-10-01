@@ -168,17 +168,17 @@ static const uint8_t cursor_bitmap[8] = {
 // ---------------------------------------------------------------------------
 // Convert a 1bpp glyph row byte into two GBA 4bpp words (4 pixels each).
 // GBA 4bpp: lower nibble = left pixel, upper nibble = right pixel.
-// Pixel value 1 maps to palette color 1 (text); 0 maps to 0 (transparent).
+// Glyph pixels use color 1; the surrounding pixels use the box fill, color 2.
 // ---------------------------------------------------------------------------
 static void glyph_row_to_words(uint8_t row, uint16_t *lo, uint16_t *hi) {
   uint16_t a = 0, b = 0;
   for (int px = 0; px < 4; px++) {
     uint8_t bit = (row >> (7 - px)) & 1;
-    a |= (uint16_t)(bit << (px * 4));
+    a |= (uint16_t)((bit ? 1u : 2u) << (px * 4));
   }
   for (int px = 0; px < 4; px++) {
     uint8_t bit = (row >> (3 - px)) & 1;
-    b |= (uint16_t)(bit << (px * 4));
+    b |= (uint16_t)((bit ? 1u : 2u) << (px * 4));
   }
   *lo = a;
   *hi = b;
