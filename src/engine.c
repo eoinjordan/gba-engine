@@ -541,7 +541,6 @@ static void render_placeholder_scene(const gba_scene_def_t *scene) {
 
 static void render_compiled_background(const gba_scene_def_t *scene) {
   volatile uint16_t *tiles_vram = CHARBLOCK(TILE_CHARBLOCK);
-  volatile uint8_t *tiles_vram_bytes = (volatile uint8_t *)tiles_vram;
   uint8_t background_width = scene_background_width(scene);
   uint8_t background_height = scene_background_height(scene);
   uint16_t width = background_width < 32 ? background_width : 32;
@@ -552,8 +551,12 @@ static void render_compiled_background(const gba_scene_def_t *scene) {
   }
 
   if (scene->tileset != NULL && scene->tileset_len > 0) {
-    for (uint16_t index = 0; index < scene->tileset_len; index++) {
-      tiles_vram_bytes[index] = scene->tileset[index];
+    // GBA VRAM accepts halfword writes. Byte stores duplicate the byte into
+    // both halves and corrupt packed 4bpp pixels (especially title lettering).
+    for (uint16_t index = 0; index < scene->tileset_len; index += 2) {
+      uint16_t high = index + 1 < scene->tileset_len
+                          ? (uint16_t)scene->tileset[index + 1] << 8 : 0;
+      tiles_vram[index / 2] = scene->tileset[index] | high;
     }
   }
 
@@ -655,9 +658,7 @@ void engine_update(void) {
   scene_changed_during_update = false;
   uint16_t keys = get_keys();
   const bool gameplay_input_was_locked = textbox_is_open() || VM_ISLOCKED();
-  if (!gameplay_input_was_locked && key_pressed(KEY_START)) {
-    load_scene((uint8_t)((current_scene_index + 1) % GBA_GAME_DATA.scene_count));
-  }
+  // Start/replay belongs to project scripts; it must not skip quest scenes.
 
   (void)script_runner_update();
   // Preserve the pre-update state so the A press that closes a textbox cannot

@@ -1251,7 +1251,40 @@ TEST(trigger_find_overlap_handles_a_null_zone_list_safely) {
 // Entry point
 // ---------------------------------------------------------------------------
 
+TEST(await_input_requires_release_and_a_new_masked_press) {
+  reset_vm();
+  static uint8_t script[] = {VM_OP_AWAIT_INPUT, 8, 0, VM_OP_SET_CONST, 7, 42, VM_OP_END};
+  stub_keys = 8;
+  script_execute(0, script, NULL, 0);
+  script_runner_update();
+  ASSERT_TRUE(VM_ISLOCKED());
+  script_runner_update();
+  ASSERT_EQ(vm_variables[7], 0);
+  stub_keys = 0;
+  script_runner_update();
+  stub_keys = 1;
+  script_runner_update();
+  ASSERT_EQ(vm_variables[7], 0);
+  stub_keys = 8;
+  script_runner_update();
+  ASSERT_EQ(vm_variables[7], 42);
+  ASSERT_FALSE(VM_ISLOCKED());
+}
+
+TEST(terminating_an_input_wait_releases_its_gameplay_lock) {
+  reset_vm();
+  static uint8_t script[] = {VM_OP_AWAIT_INPUT, 0, 1, VM_OP_END};
+  SCRIPT_CTX *ctx = script_execute(0, script, NULL, 0);
+  script_runner_update();
+  ASSERT_TRUE(VM_ISLOCKED());
+  script_terminate(ctx->ID);
+  ASSERT_FALSE(VM_ISLOCKED());
+  ASSERT_EQ(script_runner_update(), RUNNER_IDLE);
+}
+
 int main(void) {
+  RUN_TEST(await_input_requires_release_and_a_new_masked_press);
+  RUN_TEST(terminating_an_input_wait_releases_its_gameplay_lock);
   RUN_TEST(init_starts_with_no_running_contexts);
   RUN_TEST(init_clears_exception_state);
 

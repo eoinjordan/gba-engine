@@ -103,6 +103,8 @@ void script_runner_init(UBYTE reset) {
     ctx->lock_count = 0;
     ctx->flags = 0;
     ctx->wait_frames = 0;
+    ctx->input_mask = 0;
+    ctx->input_released = 0;
   }
 }
 
@@ -126,6 +128,8 @@ SCRIPT_CTX *script_execute(UBYTE bank, UBYTE *pc, UWORD *handle, unsigned int na
   ctx->lock_count = 0;
   ctx->flags = 0;
   ctx->wait_frames = 0;
+  ctx->input_mask = 0;
+  ctx->input_released = 0;
 
   if (handle != NULL) {
     *handle = ctx->ID;
@@ -148,6 +152,9 @@ UBYTE script_terminate(UBYTE ID) {
     if (ctx->ID == ID) {
       *cursor = ctx->next;
       ctx->terminated = 1;
+      if (ctx->lock_count <= vm_lock_state) vm_lock_state -= ctx->lock_count;
+      ctx->lock_count = 0;
+      ctx->input_mask = 0;
       if (ctx->hthread != NULL) {
         *ctx->hthread = SCRIPT_TERMINATED;
       }
@@ -177,6 +184,18 @@ UBYTE script_runner_update(void) {
 
   while (ctx != NULL) {
     executing_ctx = ctx;
+
+    if (ctx->input_mask) {
+      UWORD pressed = vm_get_keys() & ctx->input_mask;
+      if (!pressed) ctx->input_released = 1;
+      if (!ctx->input_released || !pressed) {
+        ctx = ctx->next;
+        continue;
+      }
+      ctx->input_mask = 0;
+      ctx->lock_count--;
+      vm_lock_state--;
+    }
 
     if (ctx->wait_frames > 0) {
       ctx->wait_frames--;
@@ -222,6 +241,19 @@ UBYTE script_runner_update(void) {
       case VM_OP_SET_SCENE_TONE:
         vm_scene_set_tone(*ctx->PC++);
         break;
+
+      case VM_OP_AWAIT_INPUT: {
+        UWORD mask = *ctx->PC++;
+        mask |= (UWORD)*ctx->PC++ << 8;
+        if (mask) {
+          ctx->input_mask = mask;
+          ctx->input_released = (vm_get_keys() & mask) == 0;
+          ctx->lock_count++;
+          vm_lock_state++;
+          i = INSTRUCTIONS_PER_QUANT;
+        }
+        break;
+      }
 
       case VM_OP_WAIT:
         ctx->wait_frames = *ctx->PC++;

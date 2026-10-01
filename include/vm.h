@@ -122,6 +122,9 @@ typedef uint16_t UINT16;
 // isometric targets; the engine converts top-down destinations to pixels.
 // VM_OP_LOAD_SCENE remains unchanged for bootstrap/legacy bytecode.
 #define VM_OP_LOAD_SCENE_AT 0x18
+// mask_lo, mask_hi: lock gameplay until all masked keys are released and
+// a new masked press arrives. Used by title screens and ending/replay scripts.
+#define VM_OP_AWAIT_INPUT 0x19
 
 extern INT16 vm_variables[VM_VARIABLE_COUNT];
 
@@ -153,6 +156,8 @@ typedef struct SCRIPT_CTX {
   UBYTE lock_count;
   UBYTE flags;
   UWORD wait_frames;
+  UWORD input_mask;
+  UBYTE input_released;
 } SCRIPT_CTX;
 
 extern UWORD script_memory[VM_HEAP_SIZE +
