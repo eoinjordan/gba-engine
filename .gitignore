@@ -3,6 +3,7 @@ bin/*.gba
 bin/*.elf
 bin/*.map
 bin/test_*
+bin/tang-*/
 *.o
 .DS_Store
 

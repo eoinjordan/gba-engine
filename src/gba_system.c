@@ -1,4 +1,7 @@
 #include "gba_system.h"
+#ifdef TANG_NANO20K
+#include "tang.h"
+#endif
 
 static uint16_t keys_current = 0;
 static uint16_t keys_previous = 0;
@@ -25,8 +28,12 @@ void gba_init(void) {
 }
 
 void wait_vblank(void) {
+#ifdef TANG_NANO20K
+    tang_present();
+#else
     while (REG_VCOUNT < 160);
     while (REG_VCOUNT >= 160);
+#endif
 }
 
 void vsync(void) {
@@ -62,14 +69,25 @@ void load_palette(const uint16_t* palette, uint16_t start, uint16_t count) {
 }
 
 void dma_copy(const void* src, void* dest, uint32_t count) {
+#ifdef TANG_NANO20K
+    const uint16_t *s = src;
+    uint16_t *d = dest;
+    while (count--) *d++ = *s++;
+#else
     REG_DMA3SAD = (uint32_t)src;
     REG_DMA3DAD = (uint32_t)dest;
     REG_DMA3CNT = count | 0x80000000; // Enable DMA
+#endif
 }
 
 void dma_fill(uint32_t value, void* dest, uint32_t count) {
+#ifdef TANG_NANO20K
+    uint16_t *d = dest;
+    while (count--) *d++ = (uint16_t)value;
+#else
     volatile uint32_t temp = value;
     REG_DMA3SAD = (uint32_t)&temp;
     REG_DMA3DAD = (uint32_t)dest;
     REG_DMA3CNT = count | 0x81000000; // Enable DMA with fixed source
+#endif
 }

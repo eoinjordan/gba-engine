@@ -76,7 +76,7 @@ TEST(vm_scene_set_tone_reloads_the_palette_for_the_current_scene) {
   ASSERT_EQ(test_mem_palette[0], RGB15(2, 5, 8));
 }
 
-TEST(engine_update_cycles_scenes_when_start_is_pressed) {
+TEST(engine_update_does_not_skip_objectives_when_start_is_pressed) {
   reset_engine();
   engine_update();
 
@@ -84,10 +84,14 @@ TEST(engine_update_cycles_scenes_when_start_is_pressed) {
   engine_update();
 
   uint16_t *map = screenblock(28);
-  // Scene 1's start script runs in the same update and selects tone 3.
-  ASSERT_EQ(test_mem_palette[0], RGB15(4, 1, 5));
-  ASSERT_EQ(map[3 * 32 + 3], 1);
-  ASSERT_EQ(map[4 * 32 + 4], 0);
+  ASSERT_EQ(map[0], 1);
+  ASSERT_EQ(map[1], 2);
+  ASSERT_EQ(map[2], 3);
+
+  // Neither a new Start press nor a held button can bypass a scripted gate.
+  engine_update();
+  ASSERT_EQ(map[0], 1);
+  ASSERT_EQ(map[1], 2);
 }
 
 TEST(textbox_dismiss_input_is_not_reused_for_movement_or_interaction) {
@@ -277,6 +281,7 @@ TEST(animated_sprites_select_idle_and_moving_frames_by_direction) {
   // The player starts facing down (direction 0), selecting idle frame 0.
   engine_update();
   ASSERT_EQ(test_mem_oam[2] & 0x03FFu, 0);
+  ASSERT_EQ((test_mem_oam[2] >> 10) & 3u, 1);
 
   // GB Studio direction 1 is left, which maps to compiler animation slot 3.
   vm_actor_set_direction(0, 1);
@@ -572,7 +577,7 @@ int main(void) {
   RUN_TEST(load_scene_renders_compiled_tilemap_and_tileset);
   RUN_TEST(vm_scene_set_tone_reloads_the_palette_for_the_current_scene);
   RUN_TEST(load_scene_schedules_its_start_script_after_spawning_actors);
-  RUN_TEST(engine_update_cycles_scenes_when_start_is_pressed);
+  RUN_TEST(engine_update_does_not_skip_objectives_when_start_is_pressed);
   RUN_TEST(textbox_dismiss_input_is_not_reused_for_movement_or_interaction);
   RUN_TEST(active_actors_move_and_destroyed_slots_are_reused);
   RUN_TEST(movement_type_patrol_paces_back_and_forth_across_its_bounds);

@@ -95,6 +95,17 @@ test-e2e: $(BINDIR)/game.gba
 	bash scripts/test-emu.sh $(BINDIR)/game.gba
 
 test: test-unit
-test-host: test-unit test-integration
+test-host: test-unit test-integration test-textbox
 
-.PHONY: test test-unit test-integration test-e2e test-host
+test-textbox: | $(BINDIR)
+	$(HOST_CC) $(HOST_CFLAGS) tests/test_textbox.c -o $(BINDIR)/test_textbox
+	$(BINDIR)/test_textbox
+
+test-tang-renderer: | $(BINDIR)
+	$(HOST_CC) -std=c11 -O2 -Wall -Wextra -I$(INCDIR) \
+		-include platform/tangnano20k/tests/environment.h \
+		platform/tangnano20k/render.c platform/tangnano20k/tests/render_test.c \
+		-o $(BINDIR)/test_tang_renderer
+	$(BINDIR)/test_tang_renderer
+
+.PHONY: test test-unit test-integration test-textbox test-e2e test-host test-tang-renderer
